@@ -36,6 +36,19 @@ npx pod-install ios
 npm run ios
 ```
 
+The app version is read from `package.json`. Native build numbers are generated
+by `app.config.js`: local builds use `1`, `DEVICEHUB_MOBILE_BUILD_NUMBER` takes
+precedence, and GitHub Actions falls back to `GITHUB_RUN_NUMBER`. You can set a
+release version explicitly with `DEVICEHUB_MOBILE_VERSION=1.2.0`. The Settings
+screen shows the resolved version and build number, and the same value is sent
+in the WebSocket client handshake.
+
+The Home screen is the entry point. It keeps the last server address and token
+in Keychain/Keystore-backed secure storage. Use Settings to edit or clear the
+saved connection and to switch between English and Simplified Chinese. Clearing
+the saved connection does not affect an already active control session; changing
+the server requires leaving the current session and connecting again.
+
 For an Android development build, install JDK 17 and the Android SDK, then run:
 
 ```sh

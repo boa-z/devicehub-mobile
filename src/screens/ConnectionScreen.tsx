@@ -9,7 +9,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type { DeviceHubService } from "devicehub-discovery";
+import { serviceOrigin, type DeviceHubService } from "devicehub-discovery";
+import { useI18n } from "../i18n";
 
 type Props = {
   initialOrigin: string;
@@ -20,7 +21,8 @@ type Props = {
   services: DeviceHubService[];
   onRefreshDiscovery: () => void;
   onSelectService: (service: DeviceHubService) => void;
-  onSubmit: (origin: string, token: string) => void;
+  onBack: () => void;
+  onSubmit: (origin: string, token: string) => Promise<void>;
 };
 
 export function ConnectionScreen({
@@ -32,8 +34,10 @@ export function ConnectionScreen({
   services,
   onRefreshDiscovery,
   onSelectService,
+  onBack,
   onSubmit,
 }: Props) {
+  const { t } = useI18n();
   const [origin, setOrigin] = useState(initialOrigin);
   const [token, setToken] = useState(initialToken);
 
@@ -46,17 +50,22 @@ export function ConnectionScreen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.content}>
-        <Text style={styles.kicker}>DEVICEHUB MOBILE</Text>
-        <Text style={styles.title}>Connect to your iPhone</Text>
-        <Text style={styles.subtitle}>
-          Use the address and access token printed by the DeviceHub headless service.
-        </Text>
+        <View style={styles.headingRow}>
+          <View style={styles.headingCopy}>
+            <Text style={styles.kicker}>{t("appName")}</Text>
+            <Text style={styles.title}>{t("connectionTitle")}</Text>
+          </View>
+          <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
+            <Text style={styles.backText}>‹ {t("back")}</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.subtitle}>{t("connectionSubtitle")}</Text>
         <View style={styles.form}>
           <View style={styles.discoveryHeader}>
             <View style={styles.discoveryTitleGroup}>
-              <Text style={styles.label}>Nearby DeviceHub services</Text>
+              <Text style={styles.label}>{t("nearbyServices")}</Text>
               <Text style={styles.discoveryHint}>
-                {scanning ? "Scanning the trusted local network..." : "Discovery is idle"}
+                {scanning ? t("scanningNetwork") : t("discoveryIdle")}
               </Text>
             </View>
             <Pressable
@@ -65,7 +74,7 @@ export function ConnectionScreen({
               onPress={onRefreshDiscovery}
               style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed, busy && styles.disabled]}
             >
-              <Text style={styles.secondaryText}>Scan</Text>
+              <Text style={styles.secondaryText}>{t("scan")}</Text>
             </Pressable>
           </View>
           {services.length > 0 ? (
@@ -74,24 +83,27 @@ export function ConnectionScreen({
                 <Pressable
                   accessibilityRole="button"
                   key={service.id}
-                  onPress={() => onSelectService(service)}
+                  onPress={() => {
+                    setOrigin(serviceOrigin(service));
+                    onSelectService(service);
+                  }}
                   style={({ pressed }) => [styles.serviceRow, pressed && styles.pressed]}
                 >
                   <View style={styles.serviceCopy}>
                     <Text numberOfLines={1} style={styles.serviceName}>{service.name}</Text>
                     <Text numberOfLines={1} style={styles.serviceAddress}>{service.host}:{service.port}</Text>
                   </View>
-                  <Text style={styles.serviceAction}>Use</Text>
+                  <Text style={styles.serviceAction}>{t("use")}</Text>
                 </Pressable>
               ))}
             </View>
           ) : (
             <Text style={styles.emptyDiscovery}>
-              No DeviceHub service found. You can still enter an address manually.
+              {t("noServices")}
             </Text>
           )}
           <View style={styles.divider} />
-          <Text style={styles.label}>Service address or headless link</Text>
+          <Text style={styles.label}>{t("serviceAddressHint")}</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
@@ -102,7 +114,7 @@ export function ConnectionScreen({
             value={origin}
             onChangeText={setOrigin}
           />
-          <Text style={styles.label}>Access token</Text>
+          <Text style={styles.label}>{t("accessToken")}</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
@@ -120,10 +132,10 @@ export function ConnectionScreen({
             onPress={() => onSubmit(origin, token)}
             style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed, busy && styles.disabled]}
           >
-            {busy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.primaryText}>Connect</Text>}
+            {busy ? <><ActivityIndicator color="#ffffff" /><Text style={styles.busyText}>{t("connecting")}</Text></> : <Text style={styles.primaryText}>{t("connectButton")}</Text>}
           </Pressable>
         </View>
-        <Text style={styles.note}>The server and this phone must be reachable on the same network.</Text>
+        <Text style={styles.note}>{t("localNetworkNote")}</Text>
       </View>
     </KeyboardAvoidingView>
   );
@@ -132,6 +144,10 @@ export function ConnectionScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#f4f6f8" },
   content: { flex: 1, justifyContent: "center", padding: 24, maxWidth: 560, width: "100%", alignSelf: "center" },
+  headingRow: { alignItems: "flex-start", flexDirection: "row", justifyContent: "space-between" },
+  headingCopy: { flex: 1, paddingRight: 12 },
+  backButton: { paddingHorizontal: 4, paddingVertical: 8 },
+  backText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
   kicker: { color: "#3973c5", fontSize: 12, fontWeight: "700", letterSpacing: 1.6, marginBottom: 10 },
   title: { color: "#152033", fontSize: 30, fontWeight: "800", marginBottom: 10 },
   subtitle: { color: "#5e6978", fontSize: 16, lineHeight: 23, marginBottom: 28 },
@@ -154,6 +170,7 @@ const styles = StyleSheet.create({
   error: { color: "#bd2d3b", fontSize: 14, lineHeight: 20, marginBottom: 14 },
   primaryButton: { alignItems: "center", backgroundColor: "#2368c4", borderRadius: 10, justifyContent: "center", minHeight: 48 },
   primaryText: { color: "#ffffff", fontSize: 16, fontWeight: "700" },
+  busyText: { color: "#ffffff", fontSize: 13, fontWeight: "700", marginTop: 4 },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.6 },
   note: { color: "#778395", fontSize: 13, lineHeight: 19, marginTop: 18, textAlign: "center" },

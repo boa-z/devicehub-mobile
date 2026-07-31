@@ -1,6 +1,9 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { I18nProvider, useI18n } from "./src/i18n";
+import { HomeScreen } from "./src/screens/HomeScreen";
+import { SettingsScreen } from "./src/screens/SettingsScreen";
 import { ConnectionScreen } from "./src/screens/ConnectionScreen";
 import { ControlScreen } from "./src/screens/ControlScreen";
 import { DeviceListScreen } from "./src/screens/DeviceListScreen";
@@ -8,7 +11,6 @@ import {
   addDeviceHubDiscoveryErrorListener,
   addDeviceHubServiceListener,
   DeviceHubDiscovery,
-  serviceOrigin,
   startDeviceHubDiscovery,
   stopDeviceHubDiscovery,
   type DeviceHubService,
@@ -20,34 +22,37 @@ import {
   type DeviceHubSocket,
 } from "./src/protocol/client";
 import type { Device, DeviceStatus } from "./src/protocol/types";
-import { clearSavedConnection, loadSavedConnection, saveConnection } from "./src/storage/credentials";
-
-const DEFAULT_ORIGIN = "http://127.0.0.1:8080";
+import { loadSavedConnection, saveConnection, type SavedConnection } from "./src/storage/credentials";
 
 function errorMessage(error: unknown) {
   if (error instanceof DeviceHubHttpError) return `${error.message} (${error.status})`;
   return error instanceof Error ? error.message : String(error);
 }
 
-export default function App() {
+function AppContent() {
+  const { t } = useI18n();
   const [client, setClient] = useState<DeviceHubClient | null>(null);
   const [status, setStatus] = useState<DeviceStatus | null>(null);
   const [socket, setSocket] = useState<DeviceHubSocket | null>(null);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [screen, setScreen] = useState<"connection" | "devices" | "control">("connection");
+  const [screen, setScreen] = useState<"home" | "connection" | "devices" | "control" | "settings">("home");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [initialOrigin, setInitialOrigin] = useState(DEFAULT_ORIGIN);
-  const [initialToken, setInitialToken] = useState("");
+  const [savedConnection, setSavedConnection] = useState<SavedConnection | null>(null);
+  const [storageReady, setStorageReady] = useState(false);
   const [discoveredServices, setDiscoveredServices] = useState<DeviceHubService[]>([]);
   const [discoveryScanning, setDiscoveryScanning] = useState(false);
 
   useEffect(() => {
+    let active = true;
     void loadSavedConnection().then((saved) => {
-      if (!saved) return;
-      setInitialOrigin(saved.origin);
-      setInitialToken(saved.token);
+      if (!active) return;
+      setSavedConnection(saved);
+      setStorageReady(true);
     });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -117,6 +122,7 @@ export default function App() {
       const nextStatus = await nextClient.status();
       setClient(nextClient);
       setStatus(nextStatus);
+      setSavedConnection(nextClient.connection);
       try {
         await saveConnection(nextClient.connection);
       } catch {
@@ -164,8 +170,7 @@ export default function App() {
     setClient(null);
     setStatus(null);
     setError(null);
-    void clearSavedConnection();
-    setScreen("connection");
+    setScreen("home");
   };
 
   const refreshDiscovery = () => {
@@ -178,6 +183,15 @@ export default function App() {
       setDiscoveryScanning(false);
     });
   };
+
+  if (!storageReady) {
+    return (
+      <View style={styles.loadingRoot}>
+        <ActivityIndicator color="#2368c4" />
+        <Text style={styles.loadingText}>{t("connecting")}</Text>
+      </View>
+    );
+  }
 
   if (screen === "control" && client && socket && selectedDevice) {
     return (
@@ -205,20 +219,75 @@ export default function App() {
     );
   }
 
+  if (screen === "settings") {
+    return (
+      <>
+        <SettingsScreen
+          onBack={() => setScreen("home")}
+          onCleared={() => setSavedConnection(null)}
+          onSaved={setSavedConnection}
+          savedConnection={savedConnection}
+        />
+        <StatusBar style="dark" />
+      </>
+    );
+  }
+
+  if (screen === "connection") {
+    return (
+      <>
+        <ConnectionScreen
+          busy={busy}
+          error={error}
+          initialOrigin={savedConnection?.origin ?? ""}
+          initialToken={savedConnection?.token ?? ""}
+          onBack={() => {
+            setError(null);
+            setScreen("home");
+          }}
+          onRefreshDiscovery={refreshDiscovery}
+          onSelectService={() => {
+            setError(null);
+          }}
+          onSubmit={connect}
+          scanning={discoveryScanning}
+          services={discoveredServices}
+        />
+        <StatusBar style="dark" />
+      </>
+    );
+  }
+
   return (
     <>
-      <ConnectionScreen
-        busy={busy}
-        error={error}
-        initialOrigin={initialOrigin}
-        initialToken={initialToken}
-        onRefreshDiscovery={refreshDiscovery}
-        onSelectService={(service) => setInitialOrigin(serviceOrigin(service))}
-        onSubmit={(origin, token) => void connect(origin, token)}
-        scanning={discoveryScanning}
-        services={discoveredServices}
+      <HomeScreen
+        connectedOrigin={client?.connection.origin ?? null}
+        deviceCount={status?.devices.length ?? null}
+        onConnect={() => {
+          setError(null);
+          setScreen("connection");
+        }}
+        onOpenDevices={() => setScreen("devices")}
+        onSettings={() => {
+          setError(null);
+          setScreen("settings");
+        }}
+        savedConnection={savedConnection}
       />
       <StatusBar style="dark" />
     </>
   );
 }
+
+export default function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  loadingRoot: { alignItems: "center", backgroundColor: "#f4f6f8", flex: 1, justifyContent: "center" },
+  loadingText: { color: "#778395", fontSize: 13, marginTop: 12 },
+});

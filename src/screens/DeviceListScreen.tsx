@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import type { Device, DeviceStatus } from "../protocol/types";
 import { DeviceHubClient } from "../protocol/client";
+import { useI18n } from "../i18n";
 
 type Props = {
   client: DeviceHubClient;
@@ -21,15 +22,16 @@ type Props = {
   onDisconnect: () => void;
 };
 
-function phaseLabel(device: Device) {
+function phaseLabel(device: Device, t: (key: "connected" | "recovering" | "connectingDevice" | "notConnected") => string) {
   if (device.session_error) return device.session_error;
-  if (device.session_phase === "connected") return "Connected";
-  if (device.session_phase === "recovering") return "Recovering";
-  if (device.session_phase === "connecting") return "Connecting";
-  return device.session_status || "Not connected";
+  if (device.session_phase === "connected") return t("connected");
+  if (device.session_phase === "recovering") return t("recovering");
+  if (device.session_phase === "connecting") return t("connectingDevice");
+  return device.session_status || t("notConnected");
 }
 
 export function DeviceListScreen({ client, status, error, onError, onRefresh, onSelect, onDisconnect }: Props) {
+  const { t } = useI18n();
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -97,21 +99,21 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
     <View style={styles.root}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.kicker}>DEVICEHUB MOBILE</Text>
-          <Text style={styles.title}>Choose an iPhone</Text>
+          <Text style={styles.kicker}>{t("appName")}</Text>
+          <Text style={styles.title}>{t("chooseDevice")}</Text>
         </View>
         <Pressable accessibilityRole="button" onPress={onDisconnect} style={styles.linkButton}>
-          <Text style={styles.linkText}>Change server</Text>
+          <Text style={styles.linkText}>{t("changeServer")}</Text>
         </Pressable>
       </View>
       <View style={styles.summary}>
         <View>
-          <Text style={styles.summaryLabel}>Service</Text>
+          <Text style={styles.summaryLabel}>{t("service")}</Text>
           <Text style={styles.summaryValue}>{client.connection.origin}</Text>
         </View>
         <View style={styles.summaryStatus}>
           <View style={styles.statusDot} />
-          <Text style={styles.summaryValue}>{status.devices.length} device(s)</Text>
+          <Text style={styles.summaryValue}>{t("deviceCount", { count: status.devices.length })}</Text>
         </View>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -131,7 +133,7 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
               <View style={styles.deviceInfo}>
                 <Text numberOfLines={1} style={styles.deviceName}>{item.name || "iPhone / iPad"}</Text>
                 <Text numberOfLines={1} style={styles.deviceMeta}>{item.connection} · {item.udid}</Text>
-                <Text style={[styles.devicePhase, ready && styles.devicePhaseReady]}>{phaseLabel(item)}</Text>
+                <Text style={[styles.devicePhase, ready && styles.devicePhaseReady]}>{phaseLabel(item, t)}</Text>
               </View>
               <View style={styles.deviceActions}>
                 <Pressable
@@ -140,7 +142,7 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
                   onPress={() => ready ? onSelect(item) : void (trustRequired ? pair(item) : failed ? reconnect(item) : connect(item))}
                   style={({ pressed }) => [styles.deviceAction, pressed && styles.pressed, busy && styles.disabled]}
                 >
-                  {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.deviceActionText}>{ready ? "Open" : trustRequired ? "Trust" : failed ? "Retry" : "Connect"}</Text>}
+                  {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.deviceActionText}>{ready ? t("open") : trustRequired ? t("trust") : failed ? t("retry") : t("connect")}</Text>}
                 </Pressable>
                 {ready ? (
                   <Pressable
@@ -149,7 +151,7 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
                     onPress={() => void disconnect(item)}
                     style={({ pressed }) => [styles.deviceSecondaryAction, pressed && styles.pressed, busy && styles.disabled]}
                   >
-                    <Text style={styles.deviceSecondaryText}>Disconnect</Text>
+                    <Text style={styles.deviceSecondaryText}>{t("disconnect")}</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -158,8 +160,8 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
         }}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={styles.emptyTitle}>No iPhone or iPad discovered</Text>
-            <Text style={styles.emptyText}>Keep the device connected to the DeviceHub host, then pull to refresh.</Text>
+            <Text style={styles.emptyTitle}>{t("noDevices")}</Text>
+            <Text style={styles.emptyText}>{t("noDevicesHint")}</Text>
           </View>
         }
       />

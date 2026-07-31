@@ -15,6 +15,7 @@ import type {
   PairDeviceResult,
   StreamMetrics,
 } from "./types";
+import { APP_VERSION, APP_BUILD } from "../runtime/version";
 
 export type DeviceHubConnection = {
   origin: string;
@@ -361,7 +362,7 @@ export class DeviceHubSocket {
         type: "client_hello",
         protocol_version: 1,
         platform: this.platform,
-        client_version: "0.1.0",
+        client_version: `${APP_VERSION}+build.${APP_BUILD}`,
         capabilities: ["native_hevc", "native_pcm", "multi_touch", "hardware_buttons"],
       });
       this.dispatch((listener) => listener.onOpen?.());

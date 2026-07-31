@@ -33,6 +33,7 @@ import type {
   StreamMetrics,
 } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
+import { useI18n } from "../i18n";
 
 const NativeVideoView = DeviceHubVideoView as any;
 
@@ -43,13 +44,7 @@ type Props = {
   onBack: () => void;
 };
 
-const HARDWARE_BUTTONS = [
-  ["home", "Home"],
-  ["lock", "Lock"],
-  ["volume-up", "Vol +"],
-  ["volume-down", "Vol -"],
-  ["mute", "Mute"],
-] as const;
+const HARDWARE_BUTTONS = ["home", "lock", "volume-up", "volume-down", "mute"] as const;
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -102,12 +97,13 @@ function changedContact(
 }
 
 export function ControlScreen({ client, socket, device, onBack }: Props) {
+  const { t } = useI18n();
   const [connected, setConnected] = useState(socket.serverHello !== null);
   const [controlGranted, setControlGranted] = useState(socket.controlGranted);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
-  const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
-  const [audioInfo, setAudioInfo] = useState("Audio off");
+  const [videoInfo, setVideoInfo] = useState(() => t("waitingVideoFrames"));
+  const [audioInfo, setAudioInfo] = useState(() => t("audioOff"));
   const [streamMetrics, setStreamMetrics] = useState<StreamMetrics | null>(null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [appsOpen, setAppsOpen] = useState(false);
@@ -445,14 +441,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     if (!connected || !controlGranted) return;
     const isShutdown = action === "shutdown";
     Alert.alert(
-      isShutdown ? "Shut down device" : "Restart device",
+      isShutdown ? t("shutDownDevice") : t("restartDevice"),
       isShutdown
-        ? "The iPhone will power off and the current control session will end."
-        : "The iPhone will restart and the current control session may disconnect.",
+        ? t("shutDownWarning")
+        : t("restartWarning"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("cancel"), style: "cancel" },
         {
-          text: isShutdown ? "Shut down" : "Restart",
+          text: isShutdown ? t("shutDown") : t("restart"),
           style: "destructive",
           onPress: () => {
             void (async () => {
@@ -463,7 +459,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                   await client.restartDevice(device.id);
                 }
               } catch (error) {
-                Alert.alert("Device action failed", error instanceof Error ? error.message : String(error));
+                Alert.alert(t("deviceActionFailed"), error instanceof Error ? error.message : String(error));
               }
             })();
           },
@@ -550,12 +546,12 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     <View style={styles.root}>
       <View style={styles.header}>
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backText}>‹ Devices</Text>
+          <Text style={styles.backText}>‹ {t("devicesBack")}</Text>
         </Pressable>
         <View style={styles.headerTitle}>
           <Text numberOfLines={1} style={styles.title}>{device.name || "iPhone / iPad"}</Text>
           <Text style={[styles.subtitle, connected ? styles.connected : styles.disconnected]}>
-            {connected ? (controlGranted ? "Connected · control granted" : "Connected · view only") : "Disconnected"}
+            {connected ? (controlGranted ? t("controlGranted") : t("viewOnly")) : t("disconnected")}
           </Text>
         </View>
         <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{device.connection}</Text></View>
@@ -563,7 +559,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       {!connected || connectionError ? (
         <View style={styles.connectionBanner}>
           <View style={styles.connectionCopy}>
-            <Text style={styles.connectionTitle}>{connected ? "Connection warning" : "Connecting to DeviceHub"}</Text>
+            <Text style={styles.connectionTitle}>{connected ? t("connectionWarning") : t("connectingToDevice")}</Text>
             {connectionError ? <Text style={styles.connectionError}>{connectionError}</Text> : null}
           </View>
           {!connected ? (
@@ -575,7 +571,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               }}
               style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}
             >
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t("retryConnection")}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -588,7 +584,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       <View style={styles.content}>
         <View style={styles.videoFrame} onLayout={onSurfaceLayout}>
           <View
-            accessibilityLabel="iPhone touch surface"
+            accessibilityLabel={t("iPhoneTouchSurface")}
             onTouchStart={sendTouches}
             onTouchMove={sendTouches}
             onTouchEnd={endTouches}
@@ -603,8 +599,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               />
             ) : (
               <>
-                <Text style={styles.videoTitle}>iPhone screen</Text>
-                <Text style={styles.videoDescription}>Install the DeviceHub development build to enable native HEVC rendering.</Text>
+                <Text style={styles.videoTitle}>{t("iPhoneScreen")}</Text>
+                <Text style={styles.videoDescription}>{t("nativeVideoHint")}</Text>
               </>
             )}
             <Text style={styles.videoTelemetry}>{videoInfo}</Text>
@@ -615,11 +611,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Text numberOfLines={1} style={styles.streamText}>
             {streamMetrics
               ? `Stream ${streamMetrics.source_fps.toFixed(1)} -> ${streamMetrics.decoded_fps.toFixed(1)} -> ${streamMetrics.sent_fps.toFixed(1)} fps · ${streamMetrics.megabits_per_second.toFixed(1)} Mbps`
-              : "Stream metrics pending"}
+              : t("streamMetricsPending")}
           </Text>
         </View>
         <View style={styles.toolbar}>
-          {HARDWARE_BUTTONS.map(([name, label]) => (
+          {HARDWARE_BUTTONS.map((name) => (
             <Pressable
               accessibilityRole="button"
               disabled={!controlGranted}
@@ -627,34 +623,34 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               onPress={() => socket.send({ type: "button", name })}
               style={({ pressed }) => [styles.hardwareButton, pressed && styles.buttonPressed, !controlGranted && styles.disabled]}
             >
-              <Text style={styles.hardwareText}>{label}</Text>
+              <Text style={styles.hardwareText}>{name === "home" ? t("homeButton") : name === "lock" ? t("lockButton") : name === "volume-up" ? t("volumeUp") : name === "volume-down" ? t("volumeDown") : t("muteButton")}</Text>
             </Pressable>
           ))}
         </View>
         <View style={styles.secondaryToolbar}>
           <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Apps</Text>
+            <Text style={styles.secondaryText}>{t("apps")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Rotate left</Text>
+            <Text style={styles.secondaryText}>{t("rotateLeft")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "right" })} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Rotate right</Text>
+            <Text style={styles.secondaryText}>{t("rotateRight")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Paste text</Text>
+            <Text style={styles.secondaryText}>{t("pasteText")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("restart")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Restart</Text>
+            <Text style={styles.secondaryText}>{t("restart")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("shutdown")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryDangerText}>Shut down</Text>
+            <Text style={styles.secondaryDangerText}>{t("shutDown")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openLocation} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Location</Text>
+            <Text style={styles.secondaryText}>{t("location")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!connected} onPress={openDetails} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>Info</Text>
+            <Text style={styles.secondaryText}>{t("deviceInfo")}</Text>
           </Pressable>
         </View>
       </View>
@@ -662,11 +658,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         <View style={styles.appsModal}>
           <View style={styles.appsHeader}>
             <View style={styles.appsHeaderCopy}>
-              <Text style={styles.appsTitle}>Apps</Text>
-              <Text style={styles.appsSubtitle}>Launch or stop an installed app</Text>
+              <Text style={styles.appsTitle}>{t("apps")}</Text>
+              <Text style={styles.appsSubtitle}>{t("launchOrStopApp")}</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setAppsOpen(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>Close</Text>
+              <Text style={styles.closeText}>{t("close")}</Text>
             </Pressable>
           </View>
           {appsError ? <Text style={styles.appsError}>{appsError}</Text> : null}
@@ -697,7 +693,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                       <Text numberOfLines={1} style={styles.appName}>{item.name || item.bundle_id}</Text>
                       <Text numberOfLines={1} style={styles.appBundle}>{item.bundle_id}</Text>
                       <Text style={[styles.appState, item.is_running && styles.appRunning]}>
-                        {item.is_running ? "Running" : "Stopped"}
+                        {item.is_running ? t("running") : t("stopped")}
                       </Text>
                     </View>
                     <View style={styles.appActions}>
@@ -707,7 +703,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                         onPress={() => void toggleApp(item)}
                         style={({ pressed }) => [styles.appAction, pressed && styles.buttonPressed, busy && styles.disabled]}
                       >
-                        {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.appActionText}>{item.is_running ? "Stop" : "Launch"}</Text>}
+                        {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.appActionText}>{item.is_running ? t("stopped") : t("launch")}</Text>}
                       </Pressable>
                       <Pressable
                         accessibilityRole="button"
@@ -715,13 +711,13 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                         onPress={() => void openConsole(item)}
                         style={({ pressed }) => [styles.appConsoleAction, pressed && styles.buttonPressed, (appsBusy || consoleBusy) && styles.disabled]}
                       >
-                        <Text style={styles.appConsoleText}>Console</Text>
+                        <Text style={styles.appConsoleText}>{t("appConsole")}</Text>
                       </Pressable>
                     </View>
                   </View>
                 );
               }}
-              ListEmptyComponent={<Text style={styles.appsEmpty}>No user apps were returned by the device.</Text>}
+              ListEmptyComponent={<Text style={styles.appsEmpty}>{t("noUserApps")}</Text>}
             />
           )}
         </View>
@@ -730,11 +726,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         <View style={styles.consoleModal}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
-              <Text style={styles.appsTitle}>App console</Text>
-              <Text numberOfLines={1} style={styles.appsSubtitle}>{consoleBundleId ?? "Application"}</Text>
+              <Text style={styles.appsTitle}>{t("appConsoleTitle")}</Text>
+              <Text numberOfLines={1} style={styles.appsSubtitle}>{consoleBundleId ?? t("application")}</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={closeConsole} style={styles.closeButton}>
-              <Text style={styles.closeText}>Close</Text>
+              <Text style={styles.closeText}>{t("close")}</Text>
             </Pressable>
           </View>
           {consoleError ? <Text style={styles.appsError}>{consoleError}</Text> : null}
@@ -744,7 +740,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             <ScrollView contentContainerStyle={styles.consoleBody}>
               <Text style={styles.consoleStatus}>{consoleSnapshot?.phase ?? "stopped"} · {consoleSnapshot?.total_lines ?? 0} lines</Text>
               {consoleLines.length === 0 ? (
-                <Text style={styles.appsEmpty}>No console output yet.</Text>
+                <Text style={styles.appsEmpty}>{t("noConsoleOutput")}</Text>
               ) : (
                 <View style={styles.consoleLines}>
                   {consoleLines.map((line) => <Text key={line.sequence} selectable style={styles.consoleLine}>{line.text}</Text>)}
@@ -761,11 +757,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         >
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
-              <Text style={styles.appsTitle}>Paste text</Text>
-              <Text style={styles.appsSubtitle}>Send text to the active iPhone</Text>
+              <Text style={styles.appsTitle}>{t("pasteTitle")}</Text>
+              <Text style={styles.appsSubtitle}>{t("pasteSubtitle")}</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setPasteOpen(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>Cancel</Text>
+              <Text style={styles.closeText}>{t("cancel")}</Text>
             </Pressable>
           </View>
           <View style={styles.pasteBody}>
@@ -775,7 +771,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               multiline
               maxLength={1024}
               onChangeText={setPasteText}
-              placeholder="Text to paste on the device"
+              placeholder={t("textToPaste")}
               placeholderTextColor="#8c96a5"
               style={styles.pasteInput}
               textAlignVertical="top"
@@ -788,7 +784,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               onPress={() => void submitPaste()}
               style={({ pressed }) => [styles.pasteButton, pressed && styles.buttonPressed, (!pasteText || pasteBusy) && styles.disabled]}
             >
-              {pasteBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>Send to device</Text>}
+              {pasteBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>{t("sendToDevice")}</Text>}
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -800,11 +796,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         >
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
-              <Text style={styles.appsTitle}>Virtual location</Text>
-              <Text style={styles.appsSubtitle}>Simulate coordinates on the active device</Text>
+              <Text style={styles.appsTitle}>{t("locationTitle")}</Text>
+              <Text style={styles.appsSubtitle}>{t("locationSubtitle")}</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setLocationOpen(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>Close</Text>
+              <Text style={styles.closeText}>{t("close")}</Text>
             </Pressable>
           </View>
           <View style={styles.pasteBody}>
@@ -812,8 +808,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               {locationStatus?.active
                 ? `Active · ${locationStatus.backend ?? "unknown backend"}`
                 : locationStatus?.available
-                  ? "Ready"
-                  : "Unavailable"}
+                  ? t("ready")
+                  : t("unavailable")}
             </Text>
             {locationStatus?.error ? <Text style={styles.appsError}>{locationStatus.error}</Text> : null}
             <TextInput
@@ -821,7 +817,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               autoCorrect={false}
               keyboardType="numbers-and-punctuation"
               onChangeText={setLatitude}
-              placeholder="Latitude (-90 to 90)"
+              placeholder={t("latitudePlaceholder")}
               placeholderTextColor="#8c96a5"
               style={styles.locationInput}
               value={latitude}
@@ -831,7 +827,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               autoCorrect={false}
               keyboardType="numbers-and-punctuation"
               onChangeText={setLongitude}
-              placeholder="Longitude (-180 to 180)"
+              placeholder={t("longitudePlaceholder")}
               placeholderTextColor="#8c96a5"
               style={styles.locationInput}
               value={longitude}
@@ -843,7 +839,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               onPress={() => void applyLocation()}
               style={({ pressed }) => [styles.pasteButton, pressed && styles.buttonPressed, locationBusy && styles.disabled]}
             >
-              {locationBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>Apply location</Text>}
+              {locationBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>{t("applyLocation")}</Text>}
             </Pressable>
             <Pressable
               accessibilityRole="button"
@@ -851,7 +847,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               onPress={() => void clearLocation()}
               style={({ pressed }) => [styles.locationClearButton, pressed && styles.buttonPressed, (locationBusy || !locationStatus?.active) && styles.disabled]}
             >
-              <Text style={styles.locationClearText}>Clear simulation</Text>
+              <Text style={styles.locationClearText}>{t("clearSimulation")}</Text>
             </Pressable>
           </View>
         </KeyboardAvoidingView>
@@ -860,11 +856,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         <View style={styles.pasteModal}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
-              <Text style={styles.appsTitle}>Device information</Text>
+              <Text style={styles.appsTitle}>{t("deviceInformation")}</Text>
               <Text style={styles.appsSubtitle}>{device.name || "iPhone / iPad"}</Text>
             </View>
             <Pressable accessibilityRole="button" onPress={() => setDetailsOpen(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>Close</Text>
+              <Text style={styles.closeText}>{t("close")}</Text>
             </Pressable>
           </View>
           {detailsBusy && !details ? (
@@ -873,37 +869,37 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             <View style={styles.detailErrorBlock}>
               <Text style={styles.appsError}>{detailsError}</Text>
               <Pressable accessibilityRole="button" onPress={() => void loadDetails()} style={styles.detailRetryButton}>
-                <Text style={styles.secondaryText}>Retry</Text>
+                <Text style={styles.secondaryText}>{t("retry")}</Text>
               </Pressable>
             </View>
           ) : details ? (
             <ScrollView contentContainerStyle={styles.detailsList}>
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Identity</Text>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Model</Text><Text style={styles.detailValue}>{formatOptional(details.product_type)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>System</Text><Text style={styles.detailValue}>{formatOptional(details.product_version)}{details.build_version ? ` (${details.build_version})` : ""}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Model number</Text><Text style={styles.detailValue}>{formatOptional(details.model_number)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Serial</Text><Text style={styles.detailValue}>{formatOptional(details.serial_number)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>UDID</Text><Text selectable style={styles.detailValue}>{formatOptional(details.udid)}</Text></View>
+                <Text style={styles.detailSectionTitle}>{t("identity")}</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("model")}</Text><Text style={styles.detailValue}>{formatOptional(details.product_type)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("system")}</Text><Text style={styles.detailValue}>{formatOptional(details.product_version)}{details.build_version ? ` (${details.build_version})` : ""}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("modelNumber")}</Text><Text style={styles.detailValue}>{formatOptional(details.model_number)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("serial")}</Text><Text style={styles.detailValue}>{formatOptional(details.serial_number)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("udid")}</Text><Text selectable style={styles.detailValue}>{formatOptional(details.udid)}</Text></View>
               </View>
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Storage</Text>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Data available</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_available_bytes)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Data capacity</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_capacity_bytes)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>System available</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.system_available_bytes)}</Text></View>
+                <Text style={styles.detailSectionTitle}>{t("storage")}</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("dataAvailable")}</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_available_bytes)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("dataCapacity")}</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_capacity_bytes)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("systemAvailable")}</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.system_available_bytes)}</Text></View>
               </View>
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Battery</Text>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Level</Text><Text style={styles.detailValue}>{details.battery?.level_percent == null ? "-" : `${details.battery.level_percent}%`}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Temperature</Text><Text style={styles.detailValue}>{details.battery?.temperature_celsius == null ? "-" : `${details.battery.temperature_celsius.toFixed(1)} °C`}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Charging</Text><Text style={styles.detailValue}>{details.battery?.is_charging == null ? "-" : details.battery.is_charging ? "Yes" : "No"}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Health</Text><Text style={styles.detailValue}>{details.battery?.health_percent == null ? "-" : `${details.battery.health_percent.toFixed(1)}%`}</Text></View>
+                <Text style={styles.detailSectionTitle}>{t("battery")}</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("level")}</Text><Text style={styles.detailValue}>{details.battery?.level_percent == null ? "-" : `${details.battery.level_percent}%`}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("temperature")}</Text><Text style={styles.detailValue}>{details.battery?.temperature_celsius == null ? "-" : `${details.battery.temperature_celsius.toFixed(1)} °C`}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("charging")}</Text><Text style={styles.detailValue}>{details.battery?.is_charging == null ? "-" : details.battery.is_charging ? t("yes") : t("no")}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("health")}</Text><Text style={styles.detailValue}>{details.battery?.health_percent == null ? "-" : `${details.battery.health_percent.toFixed(1)}%`}</Text></View>
               </View>
               <View style={styles.detailSection}>
-                <Text style={styles.detailSectionTitle}>Regional settings</Text>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Language</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.language)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Locale</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.locale)}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>Time zone</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.time_zone)}</Text></View>
+                <Text style={styles.detailSectionTitle}>{t("regionalSettings")}</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("languageSection")}</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.language)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("locale")}</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.locale)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("timeZone")}</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.time_zone)}</Text></View>
               </View>
             </ScrollView>
           ) : null}

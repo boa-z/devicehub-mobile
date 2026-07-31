@@ -6,6 +6,7 @@
     "devicehub-discovery": "file:modules/devicehub-discovery",
     "devicehub-media": "file:modules/devicehub-media",
     "expo": "~57.0.9",
+    "expo-constants": "~57.0.8",
     "expo-modules-core": "~57.0.8",
     "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",

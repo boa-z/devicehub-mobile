@@ -23,6 +23,7 @@ jobs:
     timeout-minutes: 45
     env:
       IPA_NAME: devicehub-mobile-unsigned.ipa
+      DEVICEHUB_MOBILE_BUILD_NUMBER: ${{ github.run_number }}
 
     steps:
       - name: Check out source
