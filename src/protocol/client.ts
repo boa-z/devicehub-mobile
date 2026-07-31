@@ -5,6 +5,7 @@ import type {
   MediaPacket,
   ServerMessage,
   ServerHello,
+  DeviceApp,
 } from "./types";
 
 export type DeviceHubConnection = {
@@ -114,6 +115,30 @@ export class DeviceHubClient {
     await this.request<void>(`/api/devices/${encodeURIComponent(deviceId)}/reconnect`, { method: "PUT" });
   }
 
+  async listApps(deviceId: string, options: { includeSystem?: boolean; includeAppClips?: boolean } = {}) {
+    const query = new URLSearchParams();
+    if (options.includeSystem) query.set("include_system", "true");
+    if (options.includeAppClips) query.set("include_app_clips", "true");
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return this.deviceRequest<DeviceApp[]>(deviceId, `/api/device/apps${suffix}`);
+  }
+
+  async launchApp(deviceId: string, bundleId: string) {
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/launch`,
+      { method: "PUT" },
+    );
+  }
+
+  async stopApp(deviceId: string, bundleId: string) {
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/stop`,
+      { method: "PUT" },
+    );
+  }
+
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {
     return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }
@@ -147,6 +172,12 @@ export class DeviceHubClient {
       clearTimeout(timeout);
       upstreamSignal?.removeEventListener("abort", abortFromUpstream);
     }
+  }
+
+  private async deviceRequest<T>(deviceId: string, path: string, init: RequestInit = {}) {
+    const headers = new Headers(init.headers);
+    headers.set("x-devicehub-device", deviceId);
+    return this.request<T>(path, { ...init, headers });
   }
 }
 

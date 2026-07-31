@@ -179,10 +179,10 @@ export default function App() {
     });
   };
 
-  if (screen === "control" && socket && selectedDevice) {
+  if (screen === "control" && client && socket && selectedDevice) {
     return (
       <>
-        <ControlScreen socket={socket} device={selectedDevice} onBack={leaveControl} />
+        <ControlScreen client={client} socket={socket} device={selectedDevice} onBack={leaveControl} />
         <StatusBar style="light" />
       </>
     );

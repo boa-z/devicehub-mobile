@@ -11,6 +11,7 @@ This first client layer provides:
 - Keychain/Keystore-backed storage for the last connection (the token is never written to a plain-text app preference);
 - device discovery, refresh, connect, and session status polling;
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
+- an installed-app panel that lists user apps and can launch or stop them through the host;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
 - foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.
 
@@ -59,5 +60,7 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 - WebSocket uses `/api/ws?device_id=<selection id>` and the `devicehub-mask`/token subprotocols.
 
 Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to devices and does not add Android target-device support: the controlled target set is iPhone and iPad only. Android is a client platform, not a target platform.
+
+The mobile app can launch or stop applications already installed on the target through the authenticated host API. It intentionally does not install, sign, or sideload applications.
 
 When the control socket drops in the foreground, the client retries with bounded exponential backoff (500 ms to 8 s). Backgrounding the app releases media demand and flushes native sinks instead of keeping a stale stream alive; returning to the foreground forces a fresh authenticated socket. Leaving the control screen cancels retries, flushes the native media sinks, and releases media demand.

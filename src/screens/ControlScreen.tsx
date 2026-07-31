@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AppState,
+  ActivityIndicator,
+  FlatList,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -8,15 +11,16 @@ import {
   type GestureResponderEvent,
   type LayoutChangeEvent,
 } from "react-native";
-import { DeviceHubSocket } from "../protocol/client";
+import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
-import type { Device, MultiTouchContact } from "../protocol/types";
+import type { Device, DeviceApp, MultiTouchContact } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 
 const NativeVideoView = DeviceHubVideoView as any;
 
 type Props = {
+  client: DeviceHubClient;
   socket: DeviceHubSocket;
   device: Device;
   onBack: () => void;
@@ -70,12 +74,17 @@ function changedContact(
   });
 }
 
-export function ControlScreen({ socket, device, onBack }: Props) {
+export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [connected, setConnected] = useState(socket.readyState === 1);
   const [controlGranted, setControlGranted] = useState(socket.controlGranted);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
+  const [appsOpen, setAppsOpen] = useState(false);
+  const [apps, setApps] = useState<DeviceApp[]>([]);
+  const [appsBusy, setAppsBusy] = useState(false);
+  const [appAction, setAppAction] = useState<string | null>(null);
+  const [appsError, setAppsError] = useState<string | null>(null);
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const appState = useRef(AppState.currentState);
@@ -207,6 +216,41 @@ export function ControlScreen({ socket, device, onBack }: Props) {
     socket.send({ type: "multi_touch", contacts: [...remaining, ...ended] });
   };
 
+  const loadApps = async () => {
+    setAppsBusy(true);
+    setAppsError(null);
+    try {
+      setApps(await client.listApps(device.id));
+    } catch (error) {
+      setAppsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppsBusy(false);
+    }
+  };
+
+  const openApps = () => {
+    setAppsOpen(true);
+    void loadApps();
+  };
+
+  const toggleApp = async (app: DeviceApp) => {
+    if (appAction) return;
+    setAppAction(app.bundle_id);
+    setAppsError(null);
+    try {
+      if (app.is_running) {
+        await client.stopApp(device.id, app.bundle_id);
+      } else {
+        await client.launchApp(device.id, app.bundle_id);
+      }
+      await loadApps();
+    } catch (error) {
+      setAppsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppAction(null);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -261,6 +305,9 @@ export function ControlScreen({ socket, device, onBack }: Props) {
           ))}
         </View>
         <View style={styles.secondaryToolbar}>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Apps</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>Rotate left</Text>
           </Pressable>
@@ -269,6 +316,54 @@ export function ControlScreen({ socket, device, onBack }: Props) {
           </Pressable>
         </View>
       </View>
+      <Modal animationType="slide" onRequestClose={() => setAppsOpen(false)} visible={appsOpen}>
+        <View style={styles.appsModal}>
+          <View style={styles.appsHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>Apps</Text>
+              <Text style={styles.appsSubtitle}>Launch or stop an installed app</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setAppsOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+          {appsError ? <Text style={styles.appsError}>{appsError}</Text> : null}
+          {appsBusy && apps.length === 0 ? (
+            <View style={styles.appsLoading}><ActivityIndicator color="#2368c4" /></View>
+          ) : (
+            <FlatList
+              contentContainerStyle={apps.length === 0 ? styles.appsEmptyList : styles.appsList}
+              data={apps}
+              keyExtractor={(app) => app.bundle_id}
+              refreshing={appsBusy}
+              onRefresh={() => void loadApps()}
+              renderItem={({ item }) => {
+                const busy = appAction === item.bundle_id;
+                return (
+                  <View style={styles.appRow}>
+                    <View style={styles.appCopy}>
+                      <Text numberOfLines={1} style={styles.appName}>{item.name || item.bundle_id}</Text>
+                      <Text numberOfLines={1} style={styles.appBundle}>{item.bundle_id}</Text>
+                      <Text style={[styles.appState, item.is_running && styles.appRunning]}>
+                        {item.is_running ? "Running" : "Stopped"}
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={busy}
+                      onPress={() => void toggleApp(item)}
+                      style={({ pressed }) => [styles.appAction, pressed && styles.buttonPressed, busy && styles.disabled]}
+                    >
+                      {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.appActionText}>{item.is_running ? "Stop" : "Launch"}</Text>}
+                    </Pressable>
+                  </View>
+                );
+              }}
+              ListEmptyComponent={<Text style={styles.appsEmpty}>No user apps were returned by the device.</Text>}
+            />
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -296,8 +391,28 @@ const styles = StyleSheet.create({
   hardwareButton: { alignItems: "center", backgroundColor: "#263548", borderColor: "#3b5068", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 42, minWidth: 68, paddingHorizontal: 10 },
   hardwareText: { color: "#e1e9f2", fontSize: 12, fontWeight: "700" },
   buttonPressed: { backgroundColor: "#385576" },
-  secondaryToolbar: { flexDirection: "row", gap: 8, justifyContent: "center", paddingTop: 10 },
+  secondaryToolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", paddingTop: 10 },
   secondaryButton: { paddingHorizontal: 10, paddingVertical: 8 },
   secondaryText: { color: "#8fc1ff", fontSize: 12, fontWeight: "600" },
   disabled: { opacity: 0.45 },
+  appsModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
+  appsHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 14 },
+  appsHeaderCopy: { flex: 1, minWidth: 0 },
+  appsTitle: { color: "#152033", fontSize: 24, fontWeight: "800" },
+  appsSubtitle: { color: "#778395", fontSize: 13, marginTop: 3 },
+  closeButton: { paddingHorizontal: 8, paddingVertical: 8 },
+  closeText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
+  appsError: { color: "#bd2d3b", fontSize: 13, lineHeight: 19, paddingHorizontal: 18, paddingTop: 14 },
+  appsLoading: { alignItems: "center", flex: 1, justifyContent: "center" },
+  appsList: { padding: 14 },
+  appsEmptyList: { flexGrow: 1, justifyContent: "center", padding: 24 },
+  appRow: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#dce2e9", borderRadius: 12, borderWidth: 1, flexDirection: "row", marginBottom: 10, padding: 13 },
+  appCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
+  appName: { color: "#152033", fontSize: 15, fontWeight: "700" },
+  appBundle: { color: "#778395", fontSize: 11, marginTop: 3 },
+  appState: { color: "#bd7621", fontSize: 12, marginTop: 5 },
+  appRunning: { color: "#2b9a66" },
+  appAction: { alignItems: "center", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 38, minWidth: 72, paddingHorizontal: 10 },
+  appActionText: { color: "#2368c4", fontSize: 13, fontWeight: "700" },
+  appsEmpty: { color: "#778395", fontSize: 14, lineHeight: 21, textAlign: "center" },
 });

@@ -6,13 +6,17 @@ DeviceHub Mobile is a control client. The remote device set is intentionally lim
 
 ```text
 React Native screens
-  -> protocol client (HTTP, WebSocket, typed commands)
+  -> protocol client (HTTP, WebSocket, typed commands and device-scoped app control)
   -> media adapter (native view and audio sink)
   -> iOS AVSampleBufferDisplayLayer/AVAudioEngine
   -> Android MediaCodec/AudioTrack
 ```
 
-`src/protocol` owns the wire contract. It knows the Bearer token, `/api/status`, `/api/ws`, control messages, and the `DHV2`/`DHA1` packet headers. Screens do not parse packets or construct WebSocket URLs.
+`src/protocol` owns the wire contract. It knows the Bearer token, `/api/status`, `/api/ws`, device-scoped app requests, control messages, and the `DHV2`/`DHA1` packet headers. Screens do not parse packets or construct WebSocket URLs.
+
+Device-scoped HTTP operations, such as app listing and app lifecycle control,
+carry the selected session ID in `x-devicehub-device`. This keeps multi-device
+selection explicit without changing the bearer-token or WebSocket protocol.
 
 `modules/devicehub-media` owns platform media primitives. On iOS, HEVC access units are converted to `CMSampleBuffer` values on a dedicated serial queue and presented by `AVSampleBufferDisplayLayer`; PCM16 is converted to `AVAudioPCMBuffer` on a dedicated audio queue. On Android, HEVC is queued to `MediaCodec` and PCM16 is written to a streaming `AudioTrack`. Both adapters cap pending work and discard stale inter frames when the renderer falls behind, so the JS thread is not used as a media decode queue.
 

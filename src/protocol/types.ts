@@ -33,6 +33,25 @@ export type Device = {
   } | null;
 };
 
+export type DeviceApp = {
+  bundle_id: string;
+  name: string;
+  version: string | null;
+  bundle_version: string | null;
+  is_removable: boolean;
+  is_first_party: boolean;
+  is_developer_app: boolean;
+  is_app_clip: boolean;
+  signing_kind: "system" | "development" | "test_flight" | "app_store" | "distribution" | "unknown";
+  minimum_os_version: string | null;
+  debuggable: boolean | null;
+  documents_available: boolean;
+  static_disk_usage_bytes: number | null;
+  dynamic_disk_usage_bytes: number | null;
+  total_disk_usage_bytes: number | null;
+  is_running: boolean | null;
+};
+
 export type LocationStatus = {
   available: boolean;
   active: boolean;
