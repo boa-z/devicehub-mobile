@@ -128,7 +128,7 @@ public final class DeviceHubDiscoveryModule: Module {
   }
 
   private func describe(_ error: [String: NSNumber], fallback: String) -> String {
-    if error[NSNetServicesErrorCode]?.intValue == missingLocalNetworkConfigurationCode {
+    if error[NetService.errorCode]?.intValue == missingLocalNetworkConfigurationCode {
       return "DeviceHub local-network discovery is not configured in this iOS build. Rebuild after Expo prebuild and allow Local Network access in Settings."
     }
     let details = error.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
