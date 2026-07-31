@@ -35,6 +35,7 @@ import type {
   StreamMetrics,
 } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../i18n";
 import { DeviceFilesScreen } from "./DeviceFilesScreen";
 
@@ -101,6 +102,7 @@ function changedContact(
 
 export function ControlScreen({ client, socket, device, onBack }: Props) {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const [connected, setConnected] = useState(socket.serverHello !== null);
   const [controlGranted, setControlGranted] = useState(socket.controlGranted);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -599,8 +601,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   return (
-    <View style={styles.root}>
-      <View style={styles.header}>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
+      <View style={[styles.header, { paddingTop: 12 + insets.top }]}>
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>‹ {t("devicesBack")}</Text>
         </Pressable>
@@ -717,7 +719,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </View>
       </View>
       <Modal animationType="slide" onRequestClose={() => setAppsOpen(false)} visible={appsOpen}>
-        <View style={styles.appsModal}>
+        <View style={[styles.appsModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.appsHeader}>
             <View style={styles.appsHeaderCopy}>
               <Text style={styles.appsTitle}>{t("apps")}</Text>
@@ -785,7 +787,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </View>
       </Modal>
       <Modal animationType="slide" onRequestClose={closeConsole} visible={consoleOpen}>
-        <View style={styles.consoleModal}>
+        <View style={[styles.consoleModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
               <Text style={styles.appsTitle}>{t("appConsoleTitle")}</Text>
@@ -815,7 +817,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       <Modal animationType="slide" onRequestClose={() => setPasteOpen(false)} visible={pasteOpen}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.pasteModal}
+          style={[styles.pasteModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}
         >
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
@@ -854,7 +856,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       <Modal animationType="slide" onRequestClose={() => setLocationOpen(false)} visible={locationOpen}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={styles.pasteModal}
+          style={[styles.pasteModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}
         >
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
@@ -915,7 +917,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </KeyboardAvoidingView>
       </Modal>
       <Modal animationType="slide" onRequestClose={() => setDetailsOpen(false)} visible={detailsOpen}>
-        <View style={styles.pasteModal}>
+        <View style={[styles.pasteModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
               <Text style={styles.appsTitle}>{t("deviceInformation")}</Text>
@@ -992,7 +994,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </View>
       </Modal>
       <Modal animationType="slide" onRequestClose={() => setRenameOpen(false)} visible={renameOpen}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.pasteModal}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.pasteModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
               <Text style={styles.appsTitle}>{t("renameDeviceTitle")}</Text>
@@ -1025,7 +1027,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </KeyboardAvoidingView>
       </Modal>
       <Modal animationType="slide" onRequestClose={() => setScreenshotOpen(false)} visible={screenshotOpen}>
-        <View style={styles.pasteModal}>
+        <View style={[styles.pasteModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.pasteHeader}>
             <View style={styles.appsHeaderCopy}>
               <Text style={styles.appsTitle}>{t("screenshotTitle")}</Text>

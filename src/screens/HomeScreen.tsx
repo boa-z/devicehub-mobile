@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SavedConnection } from "../storage/credentials";
 import { useI18n } from "../i18n";
 
@@ -20,11 +21,12 @@ export function HomeScreen({
   onSettings,
 }: Props) {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const connected = connectedOrigin !== null;
 
   return (
-    <View style={styles.root}>
-      <View style={styles.header}>
+    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
+      <View style={[styles.header, { paddingTop: 22 + insets.top }]}>
         <View>
           <Text style={styles.kicker}>{t("appName")}</Text>
           <Text style={styles.title}>{t("home")}</Text>

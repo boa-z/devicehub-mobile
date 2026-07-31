@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../i18n";
 import { DeviceHubClient } from "../protocol/client";
 import type { Device, DeviceFileEntry, DeviceFileList } from "../protocol/types";
@@ -60,6 +61,7 @@ function validName(value: string) {
 
 export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const [path, setPath] = useState("/");
   const [listing, setListing] = useState<DeviceFileList | null>(null);
   const [loading, setLoading] = useState(false);
@@ -164,7 +166,7 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
 
   return (
     <Modal animationType="slide" onRequestClose={onClose} visible={visible}>
-      <View style={styles.root}>
+      <View style={[styles.root, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={onClose} style={styles.headerButton}>
             <Text style={styles.headerButtonText}>{t("close")}</Text>

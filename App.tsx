@@ -1,6 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import { I18nProvider, useI18n } from "./src/i18n";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { SettingsScreen } from "./src/screens/SettingsScreen";
@@ -281,9 +282,11 @@ function AppContent() {
 
 export default function App() {
   return (
-    <I18nProvider>
-      <AppContent />
-    </I18nProvider>
+    <SafeAreaProvider>
+      <I18nProvider>
+        <AppContent />
+      </I18nProvider>
+    </SafeAreaProvider>
   );
 }
 

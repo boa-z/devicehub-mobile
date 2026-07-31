@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { serviceOrigin, type DeviceHubService } from "devicehub-discovery";
 import { useI18n } from "../i18n";
 
@@ -38,6 +39,7 @@ export function ConnectionScreen({
   onSubmit,
 }: Props) {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const [origin, setOrigin] = useState(initialOrigin);
   const [token, setToken] = useState(initialToken);
 
@@ -46,7 +48,7 @@ export function ConnectionScreen({
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, { paddingBottom: insets.bottom, paddingTop: insets.top }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <View style={styles.content}>

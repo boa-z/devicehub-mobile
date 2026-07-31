@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../runtime/version";
 import { useI18n, type Language } from "../i18n";
 import { parseConnectionInput } from "../protocol/client";
@@ -25,6 +26,7 @@ type Props = {
 
 export function SettingsScreen({ savedConnection, onBack, onSaved, onCleared }: Props) {
   const { language, setLanguage, t } = useI18n();
+  const insets = useSafeAreaInsets();
   const [origin, setOrigin] = useState(savedConnection?.origin ?? "");
   const [token, setToken] = useState(savedConnection?.token ?? "");
   const [busy, setBusy] = useState(false);
@@ -89,8 +91,8 @@ export function SettingsScreen({ savedConnection, onBack, onSaved, onCleared }: 
   const chooseLanguage = (next: Language) => setLanguage(next);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.root}>
-      <View style={styles.header}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.root, { paddingBottom: insets.bottom }]}>
+      <View style={[styles.header, { paddingTop: 14 + insets.top }]}>
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>‹ {t("back")}</Text>
         </Pressable>

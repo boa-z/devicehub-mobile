@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Device, DeviceStatus } from "../protocol/types";
 import { DeviceHubClient } from "../protocol/client";
 import { useI18n } from "../i18n";
@@ -32,6 +33,7 @@ function phaseLabel(device: Device, t: (key: "connected" | "recovering" | "conne
 
 export function DeviceListScreen({ client, status, error, onError, onRefresh, onSelect, onDisconnect }: Props) {
   const { t } = useI18n();
+  const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -96,7 +98,7 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
   };
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { paddingBottom: insets.bottom, paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.kicker}>{t("appName")}</Text>
