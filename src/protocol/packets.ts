@@ -59,12 +59,14 @@ function parseAudioPacket(buffer: ArrayBuffer): AudioPacket {
   if (channels < 1 || channels > 8 || payloadBytes === 0 || payloadBytes % (channels * 2) !== 0) {
     throw new Error("DeviceHub audio packet has an invalid PCM payload");
   }
-  const pcm = new Int16Array(payloadBytes / 2);
-  const source = new DataView(buffer, AUDIO_HEADER_BYTES);
-  for (let index = 0; index < pcm.length; index += 1) {
-    pcm[index] = source.getInt16(index * 2, true);
-  }
-  return { kind: "audio", sampleRate, channels, data: pcm };
+  // Keep the packet in its wire representation. Native audio sinks consume
+  // little-endian PCM16 directly, avoiding a per-sample JS conversion.
+  return {
+    kind: "audio",
+    sampleRate,
+    channels,
+    data: new Uint8Array(buffer.slice(AUDIO_HEADER_BYTES)),
+  };
 }
 
 export function isVideoPacket(packet: MediaPacket): packet is VideoPacket {

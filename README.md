@@ -12,7 +12,7 @@ This first client layer provides:
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
 
-The iOS development build includes a native media module boundary: `AVSampleBufferDisplayLayer` receives HEVC access units and `AVAudioEngine` receives PCM. The Android module is currently a no-op adapter so the Android client remains usable for connection and control while its MediaCodec/AudioTrack implementation is developed.
+Both client platforms use native media sinks. iOS uses `AVSampleBufferDisplayLayer` and `AVAudioEngine`; Android uses `MediaCodec` and `AudioTrack`. The media queues are bounded and drop stale packets under pressure, so the React Native thread remains available for touch input and connection state.
 
 ## Development
 
@@ -26,6 +26,15 @@ npx pod-install ios
 npm run ios
 ```
 
+For an Android development build, install JDK 17 and the Android SDK, then run:
+
+```sh
+npx expo prebuild --platform android
+npm run android
+```
+
+The generated native projects and Pods are local build products and are intentionally not committed.
+
 Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
 ## Protocol boundary
@@ -37,6 +46,6 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 - HTTP uses `Authorization: Bearer <token>`.
 - WebSocket uses `/api/ws?device_id=<selection id>` and the `devicehub-mask`/token subprotocols.
 
-Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to iOS devices and does not add Android target-device support.
+Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to devices and does not add Android target-device support: the controlled target set is iPhone and iPad only. Android is a client platform, not a target platform.
 
-When the control socket drops, the iOS client retries with bounded exponential backoff (500 ms to 8 s). Leaving the control screen cancels the retry and releases media demand.
+When the control socket drops, the client retries with bounded exponential backoff (500 ms to 8 s). Leaving the control screen cancels the retry, flushes the native media sinks, and releases media demand.

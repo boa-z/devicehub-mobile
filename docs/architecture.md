@@ -8,16 +8,17 @@ DeviceHub Mobile is a control client. The remote device set is intentionally lim
 React Native screens
   -> protocol client (HTTP, WebSocket, typed commands)
   -> media adapter (native view and audio sink)
-  -> iOS VideoToolbox/AVAudioEngine
+  -> iOS AVSampleBufferDisplayLayer/AVAudioEngine
+  -> Android MediaCodec/AudioTrack
 ```
 
 `src/protocol` owns the wire contract. It knows the Bearer token, `/api/status`, `/api/ws`, control messages, and the `DHV2`/`DHA1` packet headers. Screens do not parse packets or construct WebSocket URLs.
 
-`modules/devicehub-media` owns platform media primitives. On iOS, HEVC access units are converted to `CMSampleBuffer` values and queued to `AVSampleBufferDisplayLayer`; PCM16 is converted to `AVAudioPCMBuffer` and scheduled on `AVAudioPlayerNode`. The display queue drops frames when the layer is not ready, so a stalled native renderer cannot grow an unbounded JS queue.
+`modules/devicehub-media` owns platform media primitives. On iOS, HEVC access units are converted to `CMSampleBuffer` values on a dedicated serial queue and presented by `AVSampleBufferDisplayLayer`; PCM16 is converted to `AVAudioPCMBuffer` on a dedicated audio queue. On Android, HEVC is queued to `MediaCodec` and PCM16 is written to a streaming `AudioTrack`. Both adapters cap pending work and discard stale inter frames when the renderer falls behind, so the JS thread is not used as a media decode queue.
 
 The access token is stored only through `expo-secure-store` (Keychain on iOS and Keystore-backed storage on Android). A user changing the server explicitly clears the saved credential.
 
-The Android module currently exposes the same API as a no-op adapter. This keeps connection and input behavior testable on Android while the future MediaCodec/AudioTrack implementation can be added without changing screens or the server protocol.
+The native modules expose the same API on both client platforms. The server protocol remains platform-neutral at the client side, while `target_platforms` is restricted to `ios` because only iPhone/iPad sessions are supported.
 
 ## Handshake
 

@@ -91,7 +91,14 @@ export function ControlScreen({ socket, device, onBack }: Props) {
         setVideoInfo(`${packet.width} x ${packet.height} · ${packet.keyframe ? "keyframe" : "frame"}`);
         const view = nativeVideoRef.current;
         if (DeviceHubMedia && view) {
-          DeviceHubMedia.pushVideoFrame(view, packet.data, Number(packet.timestamp) * 1_000, packet.keyframe);
+          DeviceHubMedia.pushVideoFrame(
+            view,
+            packet.data,
+            Number(packet.timestamp) * 1_000,
+            packet.keyframe,
+            packet.width,
+            packet.height,
+          );
         }
       } else if (isAudioPacket(packet)) {
         setAudioInfo(`${packet.sampleRate} Hz · ${packet.channels} ch`);
@@ -117,6 +124,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       unsubscribe();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
+      if (nativeVideoRef.current) DeviceHubMedia?.resetVideo(nativeVideoRef.current);
       DeviceHubMedia?.reset();
       socket.close();
     };

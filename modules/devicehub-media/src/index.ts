@@ -7,9 +7,17 @@ export type DeviceHubVideoViewProps = {
 };
 
 export type DeviceHubMediaModule = {
-  pushVideoFrame(view: unknown, data: Uint8Array, timestampNs: number, keyframe: boolean): void;
-  pushAudioPcm(data: Int16Array, sampleRate: number, channels: number): void;
+  pushVideoFrame(
+    view: unknown,
+    data: Uint8Array,
+    timestampNs: number,
+    keyframe: boolean,
+    width: number,
+    height: number,
+  ): void;
+  pushAudioPcm(data: Uint8Array, sampleRate: number, channels: number): void;
   reset(): void;
+  resetVideo(view: unknown): void;
 };
 
 function loadNativeModule() {

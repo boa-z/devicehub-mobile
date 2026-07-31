@@ -112,7 +112,8 @@ export type AudioPacket = {
   kind: "audio";
   sampleRate: number;
   channels: number;
-  data: Int16Array;
+  /** Little-endian signed PCM16 bytes, kept as bytes for native bridge parity. */
+  data: Uint8Array;
 };
 
 export type MediaPacket = VideoPacket | AudioPacket;
