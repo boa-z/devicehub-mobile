@@ -52,6 +52,16 @@ export type DeviceApp = {
   is_running: boolean | null;
 };
 
+export type PairDeviceResult = {
+  outcome: "paired" | "denied" | "locked" | "timed_out" | "failed";
+  error: string | null;
+};
+
+export type ForgetDeviceResult = {
+  outcome: "forgotten" | "host_record_removed" | "device_forgotten_host_cleanup_failed" | "failed";
+  error: string | null;
+};
+
 export type LocationStatus = {
   available: boolean;
   active: boolean;

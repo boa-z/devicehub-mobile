@@ -6,6 +6,8 @@ import type {
   ServerMessage,
   ServerHello,
   DeviceApp,
+  ForgetDeviceResult,
+  PairDeviceResult,
 } from "./types";
 
 export type DeviceHubConnection = {
@@ -26,6 +28,8 @@ export type SocketCallbacks = {
 };
 
 const REQUEST_TIMEOUT_MS = 8_000;
+const PAIRING_REQUEST_TIMEOUT_MS = 100_000;
+const FORGET_REQUEST_TIMEOUT_MS = 50_000;
 const SOCKET_HANDSHAKE_TIMEOUT_MS = 8_000;
 const MOBILE_PROTOCOL_VERSION = 1;
 
@@ -40,8 +44,8 @@ export class DeviceHubHttpError extends Error {
 }
 
 export class DeviceHubRequestTimeoutError extends Error {
-  constructor(path: string) {
-    super(`DeviceHub request timed out after ${REQUEST_TIMEOUT_MS / 1_000} seconds: ${path}`);
+  constructor(path: string, timeoutMs: number) {
+    super(`DeviceHub request timed out after ${timeoutMs / 1_000} seconds: ${path}`);
     this.name = "DeviceHubRequestTimeoutError";
   }
 }
@@ -125,6 +129,26 @@ export class DeviceHubClient {
     await this.request<void>(`/api/devices/${encodeURIComponent(deviceId)}/reconnect`, { method: "PUT" });
   }
 
+  async pairDevice(deviceId: string) {
+    const result = await this.request<PairDeviceResult>(
+      `/api/devices/${encodeURIComponent(deviceId)}/pair`,
+      { method: "PUT" },
+      PAIRING_REQUEST_TIMEOUT_MS,
+    );
+    if (result.outcome !== "paired") {
+      throw new Error(result.error || `Device trust request ${result.outcome}`);
+    }
+    return result;
+  }
+
+  async forgetDevice(deviceId: string) {
+    return this.request<ForgetDeviceResult>(
+      `/api/devices/${encodeURIComponent(deviceId)}/pair`,
+      { method: "DELETE" },
+      FORGET_REQUEST_TIMEOUT_MS,
+    );
+  }
+
   async listApps(deviceId: string, options: { includeSystem?: boolean; includeAppClips?: boolean } = {}) {
     const query = new URLSearchParams();
     if (options.includeSystem) query.set("include_system", "true");
@@ -153,11 +177,11 @@ export class DeviceHubClient {
     return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }
 
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${this.connection.token}`);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const upstreamSignal = init.signal;
     const abortFromUpstream = () => controller.abort();
     upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
@@ -175,7 +199,7 @@ export class DeviceHubClient {
     } catch (error) {
       if (controller.signal.aborted) {
         if (upstreamSignal?.aborted) throw error;
-        throw new DeviceHubRequestTimeoutError(path);
+        throw new DeviceHubRequestTimeoutError(path, timeoutMs);
       }
       throw error;
     } finally {

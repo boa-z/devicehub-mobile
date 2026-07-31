@@ -57,6 +57,42 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
     }
   };
 
+  const reconnect = async (device: Device) => {
+    setBusyId(device.id);
+    try {
+      await client.reconnectDevice(device.id);
+      await onRefresh();
+    } catch (reconnectError) {
+      onError(reconnectError);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const pair = async (device: Device) => {
+    setBusyId(device.id);
+    try {
+      await client.pairDevice(device.id);
+      await onRefresh();
+    } catch (pairError) {
+      onError(pairError);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const disconnect = async (device: Device) => {
+    setBusyId(device.id);
+    try {
+      await client.disconnectDevice(device.id);
+      await onRefresh();
+    } catch (disconnectError) {
+      onError(disconnectError);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -86,6 +122,8 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
         renderItem={({ item }) => {
           const ready = item.session_phase === "connected" || item.session_phase === "recovering";
+          const failed = item.session_phase === "failed";
+          const trustRequired = item.connection === "USB" && item.pairing === "unpaired";
           const busy = busyId === item.id;
           return (
             <View style={styles.deviceCard}>
@@ -95,14 +133,26 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
                 <Text numberOfLines={1} style={styles.deviceMeta}>{item.connection} · {item.udid}</Text>
                 <Text style={[styles.devicePhase, ready && styles.devicePhaseReady]}>{phaseLabel(item)}</Text>
               </View>
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy}
-                onPress={() => ready ? onSelect(item) : void connect(item)}
-                style={({ pressed }) => [styles.deviceAction, pressed && styles.pressed, busy && styles.disabled]}
-              >
-                {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.deviceActionText}>{ready ? "Open" : "Connect"}</Text>}
-              </Pressable>
+              <View style={styles.deviceActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={busy}
+                  onPress={() => ready ? onSelect(item) : void (trustRequired ? pair(item) : failed ? reconnect(item) : connect(item))}
+                  style={({ pressed }) => [styles.deviceAction, pressed && styles.pressed, busy && styles.disabled]}
+                >
+                  {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.deviceActionText}>{ready ? "Open" : trustRequired ? "Trust" : failed ? "Retry" : "Connect"}</Text>}
+                </Pressable>
+                {ready ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => void disconnect(item)}
+                    style={({ pressed }) => [styles.deviceSecondaryAction, pressed && styles.pressed, busy && styles.disabled]}
+                  >
+                    <Text style={styles.deviceSecondaryText}>Disconnect</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           );
         }}
@@ -140,8 +190,11 @@ const styles = StyleSheet.create({
   deviceMeta: { color: "#7a8594", fontSize: 11, marginTop: 3 },
   devicePhase: { color: "#bd7621", fontSize: 12, marginTop: 7 },
   devicePhaseReady: { color: "#2b9a66" },
-  deviceAction: { alignItems: "center", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, justifyContent: "center", marginLeft: 12, minHeight: 38, minWidth: 72, paddingHorizontal: 12 },
+  deviceActions: { alignItems: "stretch", gap: 6, marginLeft: 12 },
+  deviceAction: { alignItems: "center", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 38, minWidth: 72, paddingHorizontal: 12 },
   deviceActionText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
+  deviceSecondaryAction: { alignItems: "center", justifyContent: "center", minHeight: 26, paddingHorizontal: 4 },
+  deviceSecondaryText: { color: "#bd2d3b", fontSize: 11, fontWeight: "600" },
   pressed: { opacity: 0.7 },
   disabled: { opacity: 0.55 },
   empty: { alignItems: "center" },

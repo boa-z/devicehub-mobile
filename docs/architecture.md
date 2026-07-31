@@ -18,6 +18,13 @@ Device-scoped HTTP operations, such as app listing and app lifecycle control,
 carry the selected session ID in `x-devicehub-device`. This keeps multi-device
 selection explicit without changing the bearer-token or WebSocket protocol.
 
+Device inventory operations remain separate from the active WebSocket: refresh,
+connect, disconnect, and reconnect are asynchronous manager commands. USB trust
+pairing and trust removal use the same selection ID but may wait for an on-device
+confirmation, so the client gives those requests a longer deadline than normal
+status calls. A pairing result is interpreted by the protocol client before the
+screen updates its device inventory.
+
 `modules/devicehub-media` owns platform media primitives. On iOS, HEVC access units are converted to `CMSampleBuffer` values on a dedicated serial queue and presented by `AVSampleBufferDisplayLayer`; PCM16 is converted to `AVAudioPCMBuffer` on a dedicated audio queue. On Android, HEVC is queued to `MediaCodec` and PCM16 is written to a streaming `AudioTrack`. Both adapters cap pending work and discard stale inter frames when the renderer falls behind, so the JS thread is not used as a media decode queue.
 
 The access token is stored only through `expo-secure-store` (Keychain on iOS and Keystore-backed storage on Android). A user changing the server explicitly clears the saved credential.

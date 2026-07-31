@@ -9,7 +9,7 @@ This first client layer provides:
 - authenticated service connection with the same access token used by the headless web client;
 - Bonjour/NSD discovery of headless services on a trusted local network, followed by token-authenticated HTTP/WebSocket access;
 - Keychain/Keystore-backed storage for the last connection (the token is never written to a plain-text app preference);
-- device discovery, refresh, connect, and session status polling;
+- device discovery, refresh, USB trust pairing, connect, disconnect, retry, and session status polling;
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
@@ -49,6 +49,12 @@ Download `devicehub-mobile-unsigned.ipa` from the nightly release and verify it 
 The connection screen discovers `_devicehub._tcp.local.` services when the headless server was started with `--allow-lan`. Select a discovered service to fill its address, then enter the access token printed by `devicehub-headless`. Discovery never carries the token. Manual addresses remain supported; for a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
 The headless server currently uses HTTP for a trusted local network, so Android's cleartext permission is enabled for this client. Do not expose that listener directly to the Internet; use a TLS reverse proxy or a private VPN before using it outside a trusted LAN.
+
+USB devices whose `pairing` state is `unpaired` show a **Trust** action. Keep
+the iPhone or iPad unlocked and approve the trust prompt; the request can wait
+for up to 100 seconds because the server waits for that device confirmation.
+After pairing, refresh the list and connect the device. A connected session can
+be released with **Disconnect**, and failed sessions expose **Retry**.
 
 ## Protocol boundary
 
