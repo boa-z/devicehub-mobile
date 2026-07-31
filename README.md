@@ -7,6 +7,7 @@ DeviceHub Mobile is a React Native client for connecting to a DeviceHub headless
 This first client layer provides:
 
 - authenticated service connection with the same access token used by the headless web client;
+- Bonjour/NSD discovery of headless services on a trusted local network, followed by token-authenticated HTTP/WebSocket access;
 - Keychain/Keystore-backed storage for the last connection (the token is never written to a plain-text app preference);
 - device discovery, refresh, connect, and session status polling;
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
@@ -43,7 +44,7 @@ The `Publish iOS Nightly IPA` workflow builds a Release iOS archive without Appl
 
 Download `devicehub-mobile-unsigned.ipa` from the nightly release and verify it with the accompanying `.sha256` file. The IPA contains an unsigned `.app`; it cannot be installed directly on an iPhone or iPad. Installation requires your own Apple development or distribution certificate, a matching provisioning profile, and a re-signing step. It is not an App Store or TestFlight package.
 
-Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
+The connection screen discovers `_devicehub._tcp.local.` services when the headless server was started with `--allow-lan`. Select a discovered service to fill its address, then enter the access token printed by `devicehub-headless`. Discovery never carries the token. Manual addresses remain supported; for a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
 The headless server currently uses HTTP for a trusted local network, so Android's cleartext permission is enabled for this client. Do not expose that listener directly to the Internet; use a TLS reverse proxy or a private VPN before using it outside a trusted LAN.
 

@@ -5,6 +5,15 @@ import { ConnectionScreen } from "./src/screens/ConnectionScreen";
 import { ControlScreen } from "./src/screens/ControlScreen";
 import { DeviceListScreen } from "./src/screens/DeviceListScreen";
 import {
+  addDeviceHubDiscoveryErrorListener,
+  addDeviceHubServiceListener,
+  DeviceHubDiscovery,
+  serviceOrigin,
+  startDeviceHubDiscovery,
+  stopDeviceHubDiscovery,
+  type DeviceHubService,
+} from "devicehub-discovery";
+import {
   DeviceHubClient,
   DeviceHubHttpError,
   parseConnectionInput,
@@ -30,6 +39,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [initialOrigin, setInitialOrigin] = useState(DEFAULT_ORIGIN);
   const [initialToken, setInitialToken] = useState("");
+  const [discoveredServices, setDiscoveredServices] = useState<DeviceHubService[]>([]);
+  const [discoveryScanning, setDiscoveryScanning] = useState(false);
 
   useEffect(() => {
     void loadSavedConnection().then((saved) => {
@@ -38,6 +49,49 @@ export default function App() {
       setInitialToken(saved.token);
     });
   }, []);
+
+  useEffect(() => {
+    if (screen !== "connection") return;
+    setDiscoveredServices([]);
+    setDiscoveryScanning(Boolean(DeviceHubDiscovery));
+    if (!DeviceHubDiscovery) return;
+
+    const serviceSubscription = addDeviceHubServiceListener((event) => {
+      setDiscoveredServices((current) => {
+        if (event.event === "removed") {
+          return current.filter((service) => service.id !== event.id);
+        }
+        if (!event.host || !event.port) return current;
+        const next: DeviceHubService = {
+          id: event.id,
+          name: event.name,
+          host: event.host,
+          port: event.port,
+          protocol: event.protocol ?? "",
+          targets: event.targets ?? "",
+          transport: event.transport ?? "",
+        };
+        return [...current.filter((service) => service.id !== next.id), next]
+          .sort((left, right) => left.name.localeCompare(right.name));
+      });
+    });
+    const errorSubscription = addDeviceHubDiscoveryErrorListener((event) => {
+      setError(event.message);
+      setDiscoveryScanning(false);
+    });
+    void startDeviceHubDiscovery()
+      .then(() => setDiscoveryScanning(true))
+      .catch((discoveryError) => {
+        setError(errorMessage(discoveryError));
+        setDiscoveryScanning(false);
+      });
+    return () => {
+      serviceSubscription.remove();
+      errorSubscription.remove();
+      stopDeviceHubDiscovery();
+      setDiscoveryScanning(false);
+    };
+  }, [screen]);
 
   const loadStatus = async (activeClient = client) => {
     if (!activeClient) return;
@@ -114,6 +168,17 @@ export default function App() {
     setScreen("connection");
   };
 
+  const refreshDiscovery = () => {
+    if (!DeviceHubDiscovery) return;
+    stopDeviceHubDiscovery();
+    setDiscoveredServices([]);
+    setDiscoveryScanning(true);
+    void startDeviceHubDiscovery().catch((discoveryError) => {
+      setError(errorMessage(discoveryError));
+      setDiscoveryScanning(false);
+    });
+  };
+
   if (screen === "control" && socket && selectedDevice) {
     return (
       <>
@@ -147,7 +212,11 @@ export default function App() {
         error={error}
         initialOrigin={initialOrigin}
         initialToken={initialToken}
+        onRefreshDiscovery={refreshDiscovery}
+        onSelectService={(service) => setInitialOrigin(serviceOrigin(service))}
         onSubmit={(origin, token) => void connect(origin, token)}
+        scanning={discoveryScanning}
+        services={discoveredServices}
       />
       <StatusBar style="dark" />
     </>

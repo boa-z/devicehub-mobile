@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "devicehub-discovery": "file:modules/devicehub-discovery",
     "devicehub-media": "file:modules/devicehub-media",
     "expo": "~57.0.9",
     "expo-modules-core": "~57.0.8",

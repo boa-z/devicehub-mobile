@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["DeviceHubDiscoveryModule"],
+    "podspecPath": "DeviceHubDiscovery.podspec"
+  },
+  "android": {
+    "modules": ["expo.modules.devicehubdiscovery.DeviceHubDiscoveryModule"]
+  }
+}
