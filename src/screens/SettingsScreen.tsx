@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { APP_BUILD, APP_VERSION, APP_VERSION_LABEL } from "../runtime/version";
+import { APP_BUILD, APP_COMMIT, APP_VERSION, APP_VERSION_LABEL } from "../runtime/version";
 import { useI18n, type Language } from "../i18n";
 import { parseConnectionInput } from "../protocol/client";
 import type { SavedConnection } from "../storage/credentials";
@@ -168,6 +168,7 @@ export function SettingsScreen({ savedConnection, onBack, onSaved, onCleared }: 
         <View style={styles.card}>
           <View style={styles.infoRow}><Text style={styles.infoLabel}>{t("appVersion")}</Text><Text style={styles.infoValue}>{APP_VERSION}</Text></View>
           <View style={styles.infoRow}><Text style={styles.infoLabel}>{t("buildNumber")}</Text><Text style={styles.infoValue}>{APP_BUILD}</Text></View>
+          <View style={styles.infoRow}><Text style={styles.infoLabel}>{t("commit")}</Text><Text style={styles.infoValue}>{APP_COMMIT}</Text></View>
           <View style={styles.infoRow}><Text style={styles.infoLabel}>{t("protocolClient")}</Text><Text style={styles.infoValue}>{APP_VERSION_LABEL}</Text></View>
           <Text style={styles.aboutText}>{t("mobileClientDescription")}</Text>
         </View>

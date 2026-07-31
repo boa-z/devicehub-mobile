@@ -4,6 +4,7 @@ import { Platform } from "react-native";
 type RuntimeConfig = {
   version?: unknown;
   build?: unknown;
+  commit?: unknown;
 };
 
 const expoConfig = Constants.expoConfig;
@@ -25,4 +26,5 @@ const platformBuild = Platform.OS === "ios"
   : expoConfig?.android?.versionCode;
 
 export const APP_BUILD = numberValue(configured?.build ?? platformBuild, "1");
+export const APP_COMMIT = stringValue(configured?.commit, "unknown");
 export const APP_VERSION_LABEL = `${APP_VERSION} (${APP_BUILD})`;
