@@ -57,14 +57,34 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
   const nativeVideoRef = useRef<unknown>(null);
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttempt = useRef(0);
 
   useEffect(() => {
+    let disposed = false;
+    const scheduleReconnect = () => {
+      if (disposed || reconnectTimer.current) return;
+      const delay = Math.min(8_000, 500 * 2 ** reconnectAttempt.current);
+      reconnectAttempt.current = Math.min(reconnectAttempt.current + 1, 4);
+      reconnectTimer.current = setTimeout(() => {
+        reconnectTimer.current = null;
+        socket.reconnect();
+      }, delay);
+    };
     const onOpen = () => {
       setConnected(true);
+      reconnectAttempt.current = 0;
+      if (reconnectTimer.current) {
+        clearTimeout(reconnectTimer.current);
+        reconnectTimer.current = null;
+      }
       socket.send({ type: "video_demand", active: true });
       socket.send({ type: "audio_demand", active: true });
     };
-    const onClose = () => setConnected(false);
+    const onClose = () => {
+      setConnected(false);
+      scheduleReconnect();
+    };
     const onLease = (granted: boolean) => setControlGranted(granted);
     const onMedia = (packet: import("../protocol/types").MediaPacket) => {
       if (isVideoPacket(packet)) {
@@ -91,6 +111,9 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       socket.send({ type: "audio_demand", active: true });
     }
     return () => {
+      disposed = true;
+      if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      reconnectTimer.current = null;
       unsubscribe();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });

@@ -6,6 +6,7 @@ import { ControlScreen } from "./src/screens/ControlScreen";
 import { DeviceListScreen } from "./src/screens/DeviceListScreen";
 import { DeviceHubClient, DeviceHubHttpError, type DeviceHubSocket } from "./src/protocol/client";
 import type { Device, DeviceStatus } from "./src/protocol/types";
+import { clearSavedConnection, loadSavedConnection, saveConnection } from "./src/storage/credentials";
 
 const DEFAULT_ORIGIN = "http://127.0.0.1:8080";
 
@@ -22,6 +23,16 @@ export default function App() {
   const [screen, setScreen] = useState<"connection" | "devices" | "control">("connection");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [initialOrigin, setInitialOrigin] = useState(DEFAULT_ORIGIN);
+  const [initialToken, setInitialToken] = useState("");
+
+  useEffect(() => {
+    void loadSavedConnection().then((saved) => {
+      if (!saved) return;
+      setInitialOrigin(saved.origin);
+      setInitialToken(saved.token);
+    });
+  }, []);
 
   const loadStatus = async (activeClient = client) => {
     if (!activeClient) return;
@@ -42,6 +53,11 @@ export default function App() {
       const nextStatus = await nextClient.status();
       setClient(nextClient);
       setStatus(nextStatus);
+      try {
+        await saveConnection(nextClient.connection);
+      } catch {
+        // A restricted keychain should not block an already verified connection.
+      }
       setScreen("devices");
     } catch (connectError) {
       setError(errorMessage(connectError));
@@ -59,6 +75,7 @@ export default function App() {
   const openDevice = (device: Device) => {
     if (!client) return;
     const nextSocket = client.openDevice(device.id, {
+      onOpen: () => setError(null),
       onError: (socketError) => setError(errorMessage(socketError)),
       onClose: () => setError("The DeviceHub connection closed."),
     });
@@ -83,6 +100,7 @@ export default function App() {
     setClient(null);
     setStatus(null);
     setError(null);
+    void clearSavedConnection();
     setScreen("connection");
   };
 
@@ -117,8 +135,8 @@ export default function App() {
       <ConnectionScreen
         busy={busy}
         error={error}
-        initialOrigin={DEFAULT_ORIGIN}
-        initialToken=""
+        initialOrigin={initialOrigin}
+        initialToken={initialToken}
         onSubmit={(origin, token) => void connect(origin, token)}
       />
       <StatusBar style="dark" />
