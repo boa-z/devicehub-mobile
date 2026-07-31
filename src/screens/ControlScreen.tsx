@@ -49,7 +49,7 @@ type Props = {
   onBack: () => void;
 };
 
-const HARDWARE_BUTTONS = ["home", "lock", "volume-up", "volume-down", "mute"] as const;
+const HARDWARE_BUTTONS = ["home", "lock", "volume-up", "volume-down", "mute", "siri", "action"] as const;
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
@@ -115,6 +115,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [appsOpen, setAppsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
   const [performanceOpen, setPerformanceOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
@@ -356,6 +357,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openApps = () => {
+    setControlsOpen(false);
     setAppIconErrors({});
     setAppsOpen(true);
     void loadApps();
@@ -436,6 +438,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   }, [client, consoleBundleId, consoleBusy, consoleOpen, device.id]);
 
   const openPaste = () => {
+    setControlsOpen(false);
     setPasteText("");
     setPasteError(null);
     setPasteOpen(true);
@@ -456,6 +459,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const confirmPowerAction = (action: "restart" | "shutdown") => {
+    setControlsOpen(false);
     if (!connected || !controlGranted) return;
     const isShutdown = action === "shutdown";
     Alert.alert(
@@ -487,6 +491,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openLocation = () => {
+    setControlsOpen(false);
     setLocationError(null);
     setLocationOpen(true);
     void (async () => {
@@ -556,6 +561,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openDetails = () => {
+    setControlsOpen(false);
     setDetailsOpen(true);
     setCompanions([]);
     setHomeScreen(null);
@@ -570,6 +576,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openScreenshot = () => {
+    setControlsOpen(false);
     setScreenshotError(null);
     setScreenshotBusy(true);
     setScreenshotSource(client.deviceScreenshotSource(device.id));
@@ -580,6 +587,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     setRenameValue(details?.name || device.name || "");
     setRenameError(null);
     setRenameOpen(true);
+  };
+
+  const reconnectSession = () => {
+    setControlsOpen(false);
+    setConnectionError(null);
+    setConnected(false);
+    setControlGranted(false);
+    socket.reconnect(true);
   };
 
   const rename = async () => {
@@ -614,7 +629,17 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             {connected ? (controlGranted ? t("controlGranted") : t("viewOnly")) : t("disconnected")}
           </Text>
         </View>
-        <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{device.connection}</Text></View>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("controls")}
+            onPress={() => setControlsOpen(true)}
+            style={({ pressed }) => [styles.controlsButton, pressed && styles.buttonPressed]}
+          >
+            <Text style={styles.controlsButtonText}>{t("controls")}</Text>
+          </Pressable>
+          <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{device.connection}</Text></View>
+        </View>
       </View>
       {!connected || connectionError ? (
         <View style={styles.connectionBanner}>
@@ -627,7 +652,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               accessibilityRole="button"
               onPress={() => {
                 setConnectionError(null);
-                socket.reconnect(true);
+                reconnectSession();
               }}
               style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}
             >
@@ -683,7 +708,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               onPress={() => socket.send({ type: "button", name })}
               style={({ pressed }) => [styles.hardwareButton, pressed && styles.buttonPressed, !controlGranted && styles.disabled]}
             >
-              <Text style={styles.hardwareText}>{name === "home" ? t("homeButton") : name === "lock" ? t("lockButton") : name === "volume-up" ? t("volumeUp") : name === "volume-down" ? t("volumeDown") : t("muteButton")}</Text>
+              <Text style={styles.hardwareText}>{name === "home" ? t("homeButton") : name === "lock" ? t("lockButton") : name === "volume-up" ? t("volumeUp") : name === "volume-down" ? t("volumeDown") : name === "mute" ? t("muteButton") : name === "siri" ? t("siriButton") : t("actionButton")}</Text>
             </Pressable>
           ))}
         </View>
@@ -723,6 +748,67 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </Pressable>
         </View>
       </View>
+      <Modal animationType="slide" onRequestClose={() => setControlsOpen(false)} visible={controlsOpen}>
+        <View style={[styles.controlsModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
+          <View style={styles.appsHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>{t("controls")}</Text>
+              <Text style={styles.appsSubtitle}>{t("controlPanelHint")}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setControlsOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>{t("close")}</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.controlsBody}>
+            <Text style={styles.controlSectionTitle}>{t("hardwareControls")}</Text>
+            <View style={styles.controlGrid}>
+              {HARDWARE_BUTTONS.map((name) => (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!controlGranted}
+                  key={name}
+                  onPress={() => socket.send({ type: "button", name })}
+                  style={({ pressed }) => [styles.controlGridButton, pressed && styles.buttonPressed, !controlGranted && styles.disabled]}
+                >
+                  <Text style={styles.controlGridButtonText}>
+                    {name === "home"
+                      ? t("homeButton")
+                      : name === "lock"
+                        ? t("lockButton")
+                        : name === "volume-up"
+                          ? t("volumeUp")
+                          : name === "volume-down"
+                            ? t("volumeDown")
+                            : name === "mute"
+                              ? t("muteButton")
+                              : name === "siri"
+                                ? t("siriButton")
+                                : t("actionButton")}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={styles.controlSectionTitle}>{t("deviceControls")}</Text>
+            <View style={styles.controlActionList}>
+              <Pressable accessibilityRole="button" disabled={connected} onPress={reconnectSession} style={[styles.controlActionButton, connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("reconnect")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("rotateLeft")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "right" })} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("rotateRight")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openScreenshot} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("screenshot")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("pasteText")}</Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
       <Modal animationType="slide" onRequestClose={() => setAppsOpen(false)} visible={appsOpen}>
         <View style={[styles.appsModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
           <View style={styles.appsHeader}>
@@ -1083,12 +1169,15 @@ const styles = StyleSheet.create({
   backButton: { paddingVertical: 8, width: 88 },
   backText: { color: "#8fc1ff", fontSize: 15, fontWeight: "700" },
   headerTitle: { flex: 1, minWidth: 0 },
+  headerActions: { alignItems: "center", flexDirection: "row", gap: 6, marginLeft: 8 },
   title: { color: "#f1f5fa", fontSize: 17, fontWeight: "700" },
   subtitle: { fontSize: 12, marginTop: 3 },
   connected: { color: "#66d39a" },
   disconnected: { color: "#f0a36a" },
   headerBadge: { backgroundColor: "#2a3747", borderRadius: 7, marginLeft: 8, paddingHorizontal: 8, paddingVertical: 5 },
   headerBadgeText: { color: "#bfccda", fontSize: 11, fontWeight: "700" },
+  controlsButton: { backgroundColor: "#263548", borderColor: "#3b5068", borderRadius: 7, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 6 },
+  controlsButtonText: { color: "#d7e5f4", fontSize: 11, fontWeight: "700" },
   connectionBanner: { alignItems: "center", backgroundColor: "#2a2020", borderBottomColor: "#523737", borderBottomWidth: 1, flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   connectionCopy: { flex: 1, minWidth: 0 },
   connectionTitle: { color: "#f4c7a4", fontSize: 12, fontWeight: "700" },
@@ -1115,6 +1204,15 @@ const styles = StyleSheet.create({
   secondaryText: { color: "#8fc1ff", fontSize: 12, fontWeight: "600" },
   secondaryDangerText: { color: "#f0a36a", fontSize: 12, fontWeight: "600" },
   disabled: { opacity: 0.45 },
+  controlsModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
+  controlsBody: { padding: 18 },
+  controlSectionTitle: { color: "#152033", fontSize: 15, fontWeight: "800", marginBottom: 10, marginTop: 6 },
+  controlGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  controlGridButton: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#b8cdea", borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 50, minWidth: "30%", paddingHorizontal: 12 },
+  controlGridButtonText: { color: "#2368c4", fontSize: 13, fontWeight: "700" },
+  controlActionList: { gap: 8 },
+  controlActionButton: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#b8cdea", borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 46, paddingHorizontal: 14 },
+  controlActionText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
   appsModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
   appsHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 14 },
   appsHeaderCopy: { flex: 1, minWidth: 0 },
