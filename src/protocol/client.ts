@@ -28,6 +28,7 @@ export type SocketCallbacks = {
 };
 
 const REQUEST_TIMEOUT_MS = 8_000;
+const DEVICE_COMMAND_TIMEOUT_MS = 12_000;
 const PAIRING_REQUEST_TIMEOUT_MS = 100_000;
 const FORGET_REQUEST_TIMEOUT_MS = 50_000;
 const SOCKET_HANDSHAKE_TIMEOUT_MS = 8_000;
@@ -181,6 +182,24 @@ export class DeviceHubClient {
     });
   }
 
+  async lockDevice(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/lock", {
+      method: "PUT",
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  async restartDevice(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/restart", {
+      method: "PUT",
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  async shutdownDevice(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/shutdown", {
+      method: "PUT",
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {
     return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }
@@ -216,10 +235,15 @@ export class DeviceHubClient {
     }
   }
 
-  private async deviceRequest<T>(deviceId: string, path: string, init: RequestInit = {}) {
+  private async deviceRequest<T>(
+    deviceId: string,
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ) {
     const headers = new Headers(init.headers);
     headers.set("x-devicehub-device", deviceId);
-    return this.request<T>(path, { ...init, headers });
+    return this.request<T>(path, { ...init, headers }, timeoutMs);
   }
 }
 

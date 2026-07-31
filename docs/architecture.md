@@ -23,6 +23,11 @@ outside the media WebSocket because it has request validation and a bounded
 completion response; the server rejects empty text, NUL bytes, and payloads over
 1,024 characters.
 
+Restart and shutdown use authenticated device-scoped HTTP commands rather than
+WebSocket input messages. The mobile UI requires an explicit destructive-action
+confirmation and uses a 12-second request deadline, slightly longer than the
+server's 10-second device command budget.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   AppState,
   ActivityIndicator,
+  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -292,6 +293,37 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     }
   };
 
+  const confirmPowerAction = (action: "restart" | "shutdown") => {
+    if (!connected || !controlGranted) return;
+    const isShutdown = action === "shutdown";
+    Alert.alert(
+      isShutdown ? "Shut down device" : "Restart device",
+      isShutdown
+        ? "The iPhone will power off and the current control session will end."
+        : "The iPhone will restart and the current control session may disconnect.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: isShutdown ? "Shut down" : "Restart",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                if (isShutdown) {
+                  await client.shutdownDevice(device.id);
+                } else {
+                  await client.restartDevice(device.id);
+                }
+              } catch (error) {
+                Alert.alert("Device action failed", error instanceof Error ? error.message : String(error));
+              }
+            })();
+          },
+        },
+      ],
+    );
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -377,6 +409,12 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>Paste text</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("restart")} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Restart</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("shutdown")} style={styles.secondaryButton}>
+            <Text style={styles.secondaryDangerText}>Shut down</Text>
           </Pressable>
         </View>
       </View>
@@ -503,6 +541,7 @@ const styles = StyleSheet.create({
   secondaryToolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", paddingTop: 10 },
   secondaryButton: { paddingHorizontal: 10, paddingVertical: 8 },
   secondaryText: { color: "#8fc1ff", fontSize: 12, fontWeight: "600" },
+  secondaryDangerText: { color: "#f0a36a", fontSize: 12, fontWeight: "600" },
   disabled: { opacity: 0.45 },
   appsModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
   appsHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 14 },
