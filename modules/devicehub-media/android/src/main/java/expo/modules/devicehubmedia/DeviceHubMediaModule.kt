@@ -6,6 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaFormat
+import android.view.Gravity
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -15,10 +16,16 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.views.ExpoView
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.roundToInt
 
 /** Surface-backed HEVC sink with a bounded decoder queue. */
 class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
-  private val surfaceView = SurfaceView(context)
+  private val surfaceView = DeviceHubSurfaceView(context)
+  var contentModeName: String = "fit"
+    set(value) {
+      field = if (value == "fill") "fill" else "fit"
+      surfaceView.contentMode = field
+    }
   private val executor = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "devicehub-video-decoder").apply { isDaemon = true }
   }
@@ -30,8 +37,11 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
   private var codec: MediaCodec? = null
   private var codecWidth = 0
   private var codecHeight = 0
+  @Volatile
+  private var waitingForKeyframe = true
 
   init {
+    gravity = Gravity.CENTER
     addView(surfaceView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     surfaceView.holder.addCallback(object : SurfaceHolder.Callback {
       override fun surfaceCreated(holder: SurfaceHolder) {
@@ -45,6 +55,7 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
       override fun surfaceDestroyed(holder: SurfaceHolder) {
         surface = null
         streamGeneration.incrementAndGet()
+        waitingForKeyframe = true
         executor.execute { releaseCodec() }
       }
     })
@@ -52,6 +63,7 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
 
   fun enqueue(data: ByteArray, timestampNs: Double, keyframe: Boolean, width: Int, height: Int) {
     if (width <= 0 || height <= 0) return
+    if (waitingForKeyframe && !keyframe) return
     while (true) {
       val current = pending.get()
       if (current >= maxPending && !keyframe) return
@@ -66,16 +78,26 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
         val target = surface ?: return@execute
         ensureCodec(target, width, height)
         val decoder = codec ?: return@execute
+        if (waitingForKeyframe && !keyframe) return@execute
         val inputIndex = decoder.dequeueInputBuffer(0)
-        if (inputIndex < 0) return@execute
+        if (inputIndex < 0) {
+          if (keyframe) waitingForKeyframe = true
+          return@execute
+        }
         val input = decoder.getInputBuffer(inputIndex) ?: return@execute
         input.clear()
-        if (packet.size > input.remaining()) return@execute
+        if (packet.size > input.remaining()) {
+          waitingForKeyframe = true
+          releaseCodec()
+          return@execute
+        }
         input.put(packet)
         val flags = if (keyframe) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
         decoder.queueInputBuffer(inputIndex, 0, packet.size, (timestampNs / 1_000).toLong(), flags)
+        if (keyframe) waitingForKeyframe = false
         drain(decoder)
-      } catch (_: IllegalStateException) {
+      } catch (_: Exception) {
+        waitingForKeyframe = true
         releaseCodec()
       } finally {
         pending.decrementAndGet()
@@ -85,12 +107,15 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
 
   fun reset() {
     streamGeneration.incrementAndGet()
+    waitingForKeyframe = true
     executor.execute { releaseCodec() }
   }
 
   private fun ensureCodec(target: Surface, width: Int, height: Int) {
     if (codec != null && codecWidth == width && codecHeight == height && surface === target) return
     releaseCodec()
+    waitingForKeyframe = true
+    surfaceView.setVideoSize(width, height)
     val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_HEVC, width, height)
     format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, maxOf(width * height / 2, 256 * 1024))
     codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_HEVC).also { decoder ->
@@ -118,6 +143,50 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
     codec = null
     codecWidth = 0
     codecHeight = 0
+    waitingForKeyframe = true
+  }
+}
+
+private class DeviceHubSurfaceView(context: Context) : SurfaceView(context) {
+  private var videoWidth = 0
+  private var videoHeight = 0
+  var contentMode: String = "fit"
+    set(value) {
+      field = if (value == "fill") "fill" else "fit"
+      requestLayout()
+    }
+
+  fun setVideoSize(width: Int, height: Int) {
+    post {
+      videoWidth = width
+      videoHeight = height
+      requestLayout()
+    }
+  }
+
+  override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+    if (
+      contentMode == "fit" &&
+      videoWidth > 0 &&
+      videoHeight > 0 &&
+      MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.UNSPECIFIED &&
+      MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED
+    ) {
+      val availableWidth = MeasureSpec.getSize(widthMeasureSpec)
+      val availableHeight = MeasureSpec.getSize(heightMeasureSpec)
+      if (availableWidth > 0 && availableHeight > 0) {
+        val scale = minOf(
+          availableWidth.toDouble() / videoWidth,
+          availableHeight.toDouble() / videoHeight,
+        )
+        setMeasuredDimension(
+          (videoWidth * scale).roundToInt().coerceAtLeast(1),
+          (videoHeight * scale).roundToInt().coerceAtLeast(1),
+        )
+        return
+      }
+    }
+    super.onMeasure(widthMeasureSpec, heightMeasureSpec)
   }
 }
 
@@ -132,7 +201,12 @@ private class DeviceHubAudioPlayer {
   private var channels = 0
 
   fun enqueue(data: ByteArray, nextSampleRate: Int, nextChannels: Int) {
-    if (data.isEmpty() || nextSampleRate !in 8_000..192_000 || nextChannels !in 1..2) return
+    if (
+      data.isEmpty() ||
+      nextSampleRate !in 8_000..192_000 ||
+      nextChannels !in 1..2 ||
+      data.size % (nextChannels * 2) != 0
+    ) return
     if (pending.incrementAndGet() > 8) {
       pending.decrementAndGet()
       return
@@ -143,7 +217,8 @@ private class DeviceHubAudioPlayer {
       try {
         if (generation != streamGeneration.get()) return@execute
         ensureTrack(nextSampleRate, nextChannels, packet.size)
-        track?.write(packet, 0, packet.size, AudioTrack.WRITE_BLOCKING)
+        val result = track?.write(packet, 0, packet.size, AudioTrack.WRITE_BLOCKING) ?: return@execute
+        if (result < 0) releaseTrack()
       } finally {
         pending.decrementAndGet()
       }
@@ -161,26 +236,33 @@ private class DeviceHubAudioPlayer {
     val channelMask = if (nextChannels == 1) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
     val minBuffer = AudioTrack.getMinBufferSize(nextSampleRate, channelMask, AudioFormat.ENCODING_PCM_16BIT)
     val bufferSize = maxOf(minBuffer, packetSize * 4)
-    track = AudioTrack.Builder()
-      .setAudioAttributes(
-        AudioAttributes.Builder()
-          .setUsage(AudioAttributes.USAGE_MEDIA)
-          .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
-          .build()
-      )
-      .setAudioFormat(
-        AudioFormat.Builder()
-          .setSampleRate(nextSampleRate)
-          .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-          .setChannelMask(channelMask)
-          .build()
-      )
-      .setBufferSizeInBytes(bufferSize)
-      .setTransferMode(AudioTrack.MODE_STREAM)
-      .build()
+    val nextTrack = runCatching {
+      AudioTrack.Builder()
+        .setAudioAttributes(
+          AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MOVIE)
+            .build()
+        )
+        .setAudioFormat(
+          AudioFormat.Builder()
+            .setSampleRate(nextSampleRate)
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setChannelMask(channelMask)
+            .build()
+        )
+        .setBufferSizeInBytes(bufferSize)
+        .setTransferMode(AudioTrack.MODE_STREAM)
+        .build()
+    }.getOrNull() ?: return
+    if (nextTrack.state != AudioTrack.STATE_INITIALIZED) {
+      nextTrack.release()
+      return
+    }
+    track = nextTrack
     sampleRate = nextSampleRate
     channels = nextChannels
-    track?.play()
+    runCatching { track?.play() }.onFailure { releaseTrack() }
   }
 
   private fun releaseTrack() {
@@ -207,8 +289,14 @@ class DeviceHubMediaModule : Module() {
     Function("reset") { audioPlayer.reset() }
     Function("resetVideo") { view: DeviceHubVideoView -> view.reset() }
 
+    OnDestroy {
+      audioPlayer.reset()
+    }
+
     View(DeviceHubVideoView::class) {
-      Prop("contentMode") { _: DeviceHubVideoView, _: String -> }
+      Prop("contentMode") { view: DeviceHubVideoView, mode: String ->
+        view.contentModeName = mode
+      }
     }
   }
 }
