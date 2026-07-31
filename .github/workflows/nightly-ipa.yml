@@ -17,7 +17,9 @@ concurrency:
 jobs:
   build-and-publish:
     name: Build and publish unsigned IPA
-    runs-on: macos-15
+    # Expo SDK 57's expo-modules-jsi package requires Swift tools 6.2.
+    # macos-15 ships Xcode 16.4/Swift 6.1 and cannot resolve that package.
+    runs-on: macos-26
     timeout-minutes: 45
     env:
       IPA_NAME: devicehub-mobile-unsigned.ipa
