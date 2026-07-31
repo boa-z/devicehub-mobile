@@ -99,14 +99,16 @@ function AppContent() {
     };
   }, [screen]);
 
-  const loadStatus = async (activeClient = client) => {
-    if (!activeClient) return;
+  const loadStatus = async (activeClient = client): Promise<DeviceStatus | null> => {
+    if (!activeClient) return null;
     try {
       const next = await activeClient.status();
       setStatus(next);
       setError(null);
+      return next;
     } catch (loadError) {
       setError(errorMessage(loadError));
+      return null;
     }
   };
 

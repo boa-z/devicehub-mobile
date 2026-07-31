@@ -18,7 +18,7 @@ type Props = {
   status: DeviceStatus;
   error: string | null;
   onError: (error: unknown) => void;
-  onRefresh: () => Promise<void>;
+  onRefresh: () => Promise<DeviceStatus | null>;
   onSelect: (device: Device) => void;
   onDisconnect: () => void;
 };
@@ -31,11 +31,37 @@ function phaseLabel(device: Device, t: (key: "connected" | "recovering" | "conne
   return device.session_status || t("notConnected");
 }
 
+function isReady(device: Device | undefined) {
+  return device?.session_phase === "connected" || device?.session_phase === "recovering";
+}
+
+function isTerminalFailure(device: Device | undefined) {
+  return device?.session_phase === "failed";
+}
+
+function sleep(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export function DeviceListScreen({ client, status, error, onError, onRefresh, onSelect, onDisconnect }: Props) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  const waitForSession = async (deviceId: string) => {
+    const deadline = Date.now() + 20_000;
+    let delay = 250;
+    let latest = await onRefresh();
+    while (Date.now() < deadline) {
+      const current = latest?.devices.find((item) => item.id === deviceId);
+      if (isReady(current) || isTerminalFailure(current)) return current;
+      await sleep(delay);
+      latest = await onRefresh();
+      delay = Math.min(1_000, Math.round(delay * 1.5));
+    }
+    return latest?.devices.find((item) => item.id === deviceId);
+  };
 
   const refresh = async () => {
     setRefreshing(true);
@@ -53,7 +79,10 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
     setBusyId(device.id);
     try {
       await client.connectDevice(device.id);
-      await onRefresh();
+      const result = await waitForSession(device.id);
+      if (!isReady(result)) {
+        throw new Error(result?.session_error || t("deviceConnectionTimedOut"));
+      }
     } catch (connectError) {
       onError(connectError);
     } finally {
@@ -65,7 +94,10 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
     setBusyId(device.id);
     try {
       await client.reconnectDevice(device.id);
-      await onRefresh();
+      const result = await waitForSession(device.id);
+      if (!isReady(result)) {
+        throw new Error(result?.session_error || t("deviceConnectionTimedOut"));
+      }
     } catch (reconnectError) {
       onError(reconnectError);
     } finally {
@@ -135,7 +167,9 @@ export function DeviceListScreen({ client, status, error, onError, onRefresh, on
               <View style={styles.deviceInfo}>
                 <Text numberOfLines={1} style={styles.deviceName}>{item.name || "iPhone / iPad"}</Text>
                 <Text numberOfLines={1} style={styles.deviceMeta}>{item.connection} · {item.udid}</Text>
-                <Text style={[styles.devicePhase, ready && styles.devicePhaseReady]}>{phaseLabel(item, t)}</Text>
+                <Text style={[styles.devicePhase, ready && styles.devicePhaseReady]}>
+                  {busy && !ready ? t("connectingDevice") : phaseLabel(item, t)}
+                </Text>
               </View>
               <View style={styles.deviceActions}>
                 <Pressable
