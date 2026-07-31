@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AppState,
   Pressable,
   StyleSheet,
   Text,
@@ -77,6 +78,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   const [audioInfo, setAudioInfo] = useState("Audio off");
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
+  const appState = useRef(AppState.currentState);
   const lastVideoInfoAt = useRef(0);
   const lastAudioInfoAt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,8 +90,17 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       if (nativeVideoRef.current) DeviceHubMedia?.resetVideo(nativeVideoRef.current);
       DeviceHubMedia?.reset();
     };
+    const requestMedia = () => {
+      socket.send({ type: "video_demand", active: true });
+      socket.send({ type: "audio_demand", active: true });
+    };
+    const pauseMedia = () => {
+      socket.send({ type: "video_demand", active: false });
+      socket.send({ type: "audio_demand", active: false });
+      resetNativeMedia();
+    };
     const scheduleReconnect = () => {
-      if (disposed || reconnectTimer.current) return;
+      if (disposed || appState.current !== "active" || reconnectTimer.current) return;
       const delay = Math.min(8_000, 500 * 2 ** reconnectAttempt.current);
       reconnectAttempt.current = Math.min(reconnectAttempt.current + 1, 4);
       reconnectTimer.current = setTimeout(() => {
@@ -106,8 +117,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
       }
-      socket.send({ type: "video_demand", active: true });
-      socket.send({ type: "audio_demand", active: true });
+      if (appState.current === "active") requestMedia();
     };
     const onClose = () => {
       if (disposed) return;
@@ -150,13 +160,25 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       onMedia,
     });
     setControlGranted(socket.controlGranted);
-    if (socket.readyState === 1) {
+    if (socket.readyState === 1 && appState.current === "active") {
       setConnected(true);
-      socket.send({ type: "video_demand", active: true });
-      socket.send({ type: "audio_demand", active: true });
+      requestMedia();
     }
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      const previousState = appState.current;
+      appState.current = nextState;
+      if (nextState === "active" && previousState !== "active") {
+        setConnected(false);
+        setControlGranted(false);
+        resetNativeMedia();
+        socket.reconnect(true);
+      } else if (nextState !== "active" && previousState === "active") {
+        pauseMedia();
+      }
+    });
     return () => {
       disposed = true;
+      appStateSubscription.remove();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       reconnectTimer.current = null;
       unsubscribe();

@@ -38,3 +38,12 @@ The server replies with `server_hello`, including the supported packet formats a
 - Keep native media queues bounded and drop stale frames under pressure.
 - Request a server keyframe after a decoder reset or generation change.
 - Move the WebSocket media ingress into native code in a later stage if JS packet delivery becomes the remaining CPU bottleneck; the current module boundary allows that migration without changing the UI.
+
+## Application lifecycle
+
+`ControlScreen` owns the lifetime of its media demand. When the app leaves the
+foreground it disables video and audio demand and resets both native sinks, so
+the headless service does not continue producing frames for an unavailable
+surface. A foreground transition closes any stale socket and opens a new one;
+only that new socket is allowed to publish frames or control-lease state. Retry
+backoff is active only while the screen is visible and the app is active.

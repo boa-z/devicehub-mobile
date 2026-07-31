@@ -227,8 +227,16 @@ export class DeviceHubSocket {
     return true;
   }
 
-  reconnect() {
-    if (this.closed || this.socket) return false;
+  reconnect(force = false) {
+    if (this.closed) return false;
+    if (this.socket && !force) return false;
+    if (force && this.socket) {
+      const previous = this.socket;
+      this.socket = null;
+      previous.close();
+    }
+    this.leaseGranted = false;
+    this.negotiatedHello = null;
     this.open();
     return true;
   }

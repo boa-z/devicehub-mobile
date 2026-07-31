@@ -12,6 +12,7 @@ This first client layer provides:
 - device discovery, refresh, connect, and session status polling;
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
+- foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.
 
 Both client platforms use native media sinks. iOS uses `AVSampleBufferDisplayLayer` and `AVAudioEngine`; Android uses `MediaCodec` and `AudioTrack`. The media queues are bounded and drop stale packets under pressure, so the React Native thread remains available for touch input and connection state.
 
@@ -59,4 +60,4 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 
 Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to devices and does not add Android target-device support: the controlled target set is iPhone and iPad only. Android is a client platform, not a target platform.
 
-When the control socket drops, the client retries with bounded exponential backoff (500 ms to 8 s). Leaving the control screen cancels the retry, flushes the native media sinks, and releases media demand.
+When the control socket drops in the foreground, the client retries with bounded exponential backoff (500 ms to 8 s). Backgrounding the app releases media demand and flushes native sinks instead of keeping a stale stream alive; returning to the foreground forces a fresh authenticated socket. Leaving the control screen cancels retries, flushes the native media sinks, and releases media demand.
