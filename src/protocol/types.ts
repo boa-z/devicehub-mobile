@@ -62,6 +62,13 @@ export type MultiTouchContact = {
 };
 
 export type DeviceHubCommand =
+  | {
+      type: "client_hello";
+      protocol_version: number;
+      platform: "ios" | "android";
+      client_version: string;
+      capabilities: string[];
+    }
   | { type: "multi_touch"; contacts: MultiTouchContact[] }
   | { type: "button"; name: string }
   | { type: "button_down"; name: string }
@@ -73,12 +80,22 @@ export type DeviceHubCommand =
   | { type: "frame_presented"; sequence: string };
 
 export type ServerMessage =
+  | { type: "server_hello"; payload: ServerHello }
   | { type: "control_lease"; payload: { granted: boolean } }
   | { type: "status"; payload: DeviceStatus }
   | { type: "clipboard"; payload: unknown }
   | { type: "device_event"; payload: unknown }
   | { type: "stream_metrics"; payload: unknown }
   | { type: string; payload?: unknown };
+
+export type ServerHello = {
+  protocol_version: number;
+  target_platforms: string[];
+  video: { codec: string; packet: string };
+  audio: { codec: string; packet: string };
+  input: string[];
+  control_lease: boolean;
+};
 
 export type VideoPacket = {
   kind: "video";

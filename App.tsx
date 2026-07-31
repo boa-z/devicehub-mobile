@@ -1,5 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { ConnectionScreen } from "./src/screens/ConnectionScreen";
 import { ControlScreen } from "./src/screens/ControlScreen";
 import { DeviceListScreen } from "./src/screens/DeviceListScreen";
@@ -37,7 +38,7 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const nextClient = new DeviceHubClient(origin, token);
+      const nextClient = new DeviceHubClient(origin, token, Platform.OS === "android" ? "android" : "ios");
       const nextStatus = await nextClient.status();
       setClient(nextClient);
       setStatus(nextStatus);

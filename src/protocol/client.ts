@@ -11,6 +11,8 @@ export type DeviceHubConnection = {
   token: string;
 };
 
+export type MobilePlatform = "ios" | "android";
+
 export type SocketCallbacks = {
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
@@ -53,11 +55,13 @@ async function readError(response: Response) {
 
 export class DeviceHubClient {
   readonly connection: DeviceHubConnection;
+  readonly platform: MobilePlatform;
 
-  constructor(origin: string, token: string) {
+  constructor(origin: string, token: string, platform: MobilePlatform = "ios") {
     const normalizedToken = token.trim();
     if (!normalizedToken) throw new Error("Access token is required");
     this.connection = { origin: normalizeOrigin(origin), token: normalizedToken };
+    this.platform = platform;
   }
 
   async status(signal?: AbortSignal) {
@@ -81,7 +85,7 @@ export class DeviceHubClient {
   }
 
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {
-    return new DeviceHubSocket(this.connection, deviceId, callbacks);
+    return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -105,6 +109,7 @@ export class DeviceHubSocket {
   constructor(
     connection: DeviceHubConnection,
     deviceId: string,
+    private readonly platform: MobilePlatform,
     callbacks: SocketCallbacks = {},
   ) {
     this.callbacks = callbacks;
@@ -114,7 +119,16 @@ export class DeviceHubSocket {
       ["devicehub-mask", connection.token],
     );
     this.socket.binaryType = "arraybuffer";
-    this.socket.onopen = () => this.dispatch((listener) => listener.onOpen?.());
+    this.socket.onopen = () => {
+      this.send({
+        type: "client_hello",
+        protocol_version: 1,
+        platform: this.platform,
+        client_version: "0.1.0",
+        capabilities: ["native_hevc", "native_pcm", "multi_touch", "hardware_buttons"],
+      });
+      this.dispatch((listener) => listener.onOpen?.());
+    };
     this.socket.onerror = (event) => this.dispatch((listener) => listener.onError?.(event));
     this.socket.onclose = (event) => this.dispatch((listener) => listener.onClose?.(event));
     this.socket.onmessage = (event) => void this.handleMessage(event.data);
