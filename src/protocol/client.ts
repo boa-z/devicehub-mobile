@@ -9,6 +9,8 @@ import type {
   AppConsoleSnapshot,
   ClipboardEvent,
   DeviceDetails,
+  CompanionDevice,
+  HomeScreenLayout,
   DeviceEvent,
   ForgetDeviceResult,
   LocationStatus,
@@ -250,6 +252,30 @@ export class DeviceHubClient {
     return this.deviceRequest<DeviceDetails>(deviceId, "/api/device/details", {}, DEVICE_DETAILS_TIMEOUT_MS);
   }
 
+  async deviceCompanions(deviceId: string) {
+    return this.deviceRequest<CompanionDevice[]>(deviceId, "/api/device/companions", {}, DEVICE_DETAILS_TIMEOUT_MS);
+  }
+
+  async homeScreenLayout(deviceId: string) {
+    return this.deviceRequest<HomeScreenLayout>(deviceId, "/api/device/home-screen", {}, DEVICE_DETAILS_TIMEOUT_MS);
+  }
+
+  async renameDevice(deviceId: string, name: string) {
+    return this.deviceRequest<{ name: string }>(deviceId, "/api/device/name", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name }),
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  deviceScreenshotSource(deviceId: string) {
+    return this.authenticatedImageSource("/api/device/screenshot", deviceId, true);
+  }
+
+  deviceWallpaperSource(deviceId: string, kind: "home" | "lock") {
+    return this.authenticatedImageSource(`/api/device/wallpaper/${kind}`, deviceId, true);
+  }
+
   async setLocation(deviceId: string, latitude: number, longitude: number) {
     await this.deviceRequest<void>(deviceId, "/api/device/location", {
       method: "PUT",
@@ -308,6 +334,17 @@ export class DeviceHubClient {
     const headers = new Headers(init.headers);
     headers.set("x-devicehub-device", deviceId);
     return this.request<T>(path, { ...init, headers }, timeoutMs);
+  }
+
+  private authenticatedImageSource(path: string, deviceId: string, cacheBust = false) {
+    const suffix = cacheBust ? `${path.includes("?") ? "&" : "?"}t=${Date.now()}` : "";
+    return {
+      uri: `${this.connection.origin}${path}${suffix}`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
   }
 }
 

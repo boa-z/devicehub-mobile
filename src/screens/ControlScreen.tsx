@@ -28,6 +28,8 @@ import type {
   DeviceApp,
   DeviceDetails,
   DeviceEvent,
+  CompanionDevice,
+  HomeScreenLayout,
   LocationStatus,
   MultiTouchContact,
   StreamMetrics,
@@ -126,6 +128,16 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [details, setDetails] = useState<DeviceDetails | null>(null);
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [companions, setCompanions] = useState<CompanionDevice[]>([]);
+  const [homeScreen, setHomeScreen] = useState<HomeScreenLayout | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [screenshotOpen, setScreenshotOpen] = useState(false);
+  const [screenshotSource, setScreenshotSource] = useState<ReturnType<DeviceHubClient["deviceScreenshotSource"]> | null>(null);
+  const [screenshotBusy, setScreenshotBusy] = useState(false);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleBusy, setConsoleBusy] = useState(false);
   const [consoleError, setConsoleError] = useState<string | null>(null);
@@ -539,7 +551,49 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
 
   const openDetails = () => {
     setDetailsOpen(true);
+    setCompanions([]);
+    setHomeScreen(null);
     void loadDetails();
+    void Promise.allSettled([
+      client.deviceCompanions(device.id),
+      client.homeScreenLayout(device.id),
+    ]).then(([companionsResult, homeScreenResult]) => {
+      if (companionsResult.status === "fulfilled") setCompanions(companionsResult.value);
+      if (homeScreenResult.status === "fulfilled") setHomeScreen(homeScreenResult.value);
+    });
+  };
+
+  const openScreenshot = () => {
+    setScreenshotError(null);
+    setScreenshotBusy(true);
+    setScreenshotSource(client.deviceScreenshotSource(device.id));
+    setScreenshotOpen(true);
+  };
+
+  const openRename = () => {
+    setRenameValue(details?.name || device.name || "");
+    setRenameError(null);
+    setRenameOpen(true);
+  };
+
+  const rename = async () => {
+    const name = renameValue.trim();
+    if (!name) {
+      setRenameError(t("nameRequired"));
+      return;
+    }
+    setRenameBusy(true);
+    setRenameError(null);
+    try {
+      const result = await client.renameDevice(device.id, name);
+      setDetails((current) => current ? { ...current, name: result.name } : current);
+      setRenameOpen(false);
+      showActivity(`${t("rename")}: ${result.name}`);
+    } catch (error) {
+      setRenameError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRenameBusy(false);
+    }
   };
 
   return (
@@ -651,6 +705,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!connected} onPress={openDetails} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("deviceInfo")}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={openScreenshot} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>{t("screenshot")}</Text>
           </Pressable>
         </View>
       </View>
@@ -859,9 +916,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               <Text style={styles.appsTitle}>{t("deviceInformation")}</Text>
               <Text style={styles.appsSubtitle}>{device.name || "iPhone / iPad"}</Text>
             </View>
-            <Pressable accessibilityRole="button" onPress={() => setDetailsOpen(false)} style={styles.closeButton}>
-              <Text style={styles.closeText}>{t("close")}</Text>
-            </Pressable>
+            <View style={styles.modalActions}>
+              <Pressable accessibilityRole="button" onPress={openRename} style={styles.closeButton}>
+                <Text style={styles.closeText}>{t("rename")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={() => setDetailsOpen(false)} style={styles.closeButton}>
+                <Text style={styles.closeText}>{t("close")}</Text>
+              </Pressable>
+            </View>
           </View>
           {detailsBusy && !details ? (
             <View style={styles.appsLoading}><ActivityIndicator color="#2368c4" /></View>
@@ -901,8 +963,90 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                 <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("locale")}</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.locale)}</Text></View>
                 <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("timeZone")}</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.time_zone)}</Text></View>
               </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>{t("homeScreenLayout")}</Text>
+                {homeScreen ? (
+                  <>
+                    <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("pages")}</Text><Text style={styles.detailValue}>{homeScreen.page_count}</Text></View>
+                    <View style={styles.detailRow}><Text style={styles.detailLabel}>{t("appLocations")}</Text><Text style={styles.detailValue}>{homeScreen.apps.length}</Text></View>
+                    {homeScreen.truncated ? <Text style={styles.detailHint}>{t("truncated")}</Text> : null}
+                  </>
+                ) : <Text style={styles.detailHint}>{t("noUserApps")}</Text>}
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>{t("companions")}</Text>
+                {companions.length === 0 ? <Text style={styles.detailHint}>{t("noCompanions")}</Text> : companions.map((companion) => (
+                  <View key={companion.identifier} style={styles.companionRow}>
+                    <Text numberOfLines={1} style={styles.companionName}>{companion.name || companion.identifier}</Text>
+                    <Text numberOfLines={1} style={styles.companionMeta}>{[companion.product_type, companion.product_version].filter(Boolean).join(" · ") || companion.identifier}</Text>
+                  </View>
+                ))}
+              </View>
             </ScrollView>
           ) : null}
+        </View>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={() => setRenameOpen(false)} visible={renameOpen}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.pasteModal}>
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>{t("renameDeviceTitle")}</Text>
+              <Text style={styles.appsSubtitle}>{t("renameHint")}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setRenameOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>{t("cancel")}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.pasteBody}>
+            <Text style={styles.label}>{t("deviceName")}</Text>
+            <TextInput
+              autoCorrect={false}
+              onChangeText={setRenameValue}
+              placeholder={t("deviceName")}
+              placeholderTextColor="#8c96a5"
+              style={styles.pasteInputSingleLine}
+              value={renameValue}
+            />
+            {renameError ? <Text style={styles.appsError}>{renameError}</Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={renameBusy}
+              onPress={() => void rename()}
+              style={({ pressed }) => [styles.pasteButton, pressed && styles.buttonPressed, renameBusy && styles.disabled]}
+            >
+              {renameBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>{t("renameAction")}</Text>}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={() => setScreenshotOpen(false)} visible={screenshotOpen}>
+        <View style={styles.pasteModal}>
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>{t("screenshotTitle")}</Text>
+              <Text style={styles.appsSubtitle}>{t("screenshotHint")}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setScreenshotOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>{t("close")}</Text>
+            </Pressable>
+          </View>
+          <View style={styles.screenshotBody}>
+            {screenshotSource && !screenshotError ? (
+              <Image
+                accessibilityLabel={t("screenshotTitle")}
+                onError={() => {
+                  setScreenshotBusy(false);
+                  setScreenshotError(t("screenshotFailed"));
+                }}
+                onLoad={() => setScreenshotBusy(false)}
+                resizeMode="contain"
+                source={screenshotSource}
+                style={styles.screenshotImage}
+              />
+            ) : null}
+            {screenshotBusy ? <View style={styles.screenshotLoading}><ActivityIndicator color="#2368c4" /><Text style={styles.screenshotLoadingText}>{t("screenshotLoading")}</Text></View> : null}
+            {screenshotError ? <Text style={styles.appsError}>{screenshotError}</Text> : null}
+          </View>
         </View>
       </Modal>
     </View>
@@ -952,6 +1096,7 @@ const styles = StyleSheet.create({
   appsHeaderCopy: { flex: 1, minWidth: 0 },
   appsTitle: { color: "#152033", fontSize: 24, fontWeight: "800" },
   appsSubtitle: { color: "#778395", fontSize: 13, marginTop: 3 },
+  modalActions: { alignItems: "center", flexDirection: "row" },
   closeButton: { paddingHorizontal: 8, paddingVertical: 8 },
   closeText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
   appsError: { color: "#bd2d3b", fontSize: 13, lineHeight: 19, paddingHorizontal: 18, paddingTop: 14 },
@@ -976,6 +1121,12 @@ const styles = StyleSheet.create({
   pasteModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
   pasteHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingBottom: 14, paddingHorizontal: 18 },
   pasteBody: { padding: 18 },
+  label: { color: "#425064", fontSize: 13, fontWeight: "700", marginBottom: 8 },
+  pasteInputSingleLine: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, padding: 14 },
+  screenshotBody: { alignItems: "center", flex: 1, justifyContent: "center", padding: 18 },
+  screenshotImage: { height: "100%", maxWidth: "100%", width: "100%" },
+  screenshotLoading: { alignItems: "center", backgroundColor: "rgba(244,246,248,0.9)", justifyContent: "center", padding: 16, position: "absolute" },
+  screenshotLoadingText: { color: "#536273", fontSize: 13, marginTop: 10 },
   pasteInput: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, minHeight: 180, padding: 14 },
   pasteButton: { alignItems: "center", backgroundColor: "#2368c4", borderRadius: 10, justifyContent: "center", marginTop: 14, minHeight: 48 },
   pasteButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
@@ -989,6 +1140,10 @@ const styles = StyleSheet.create({
   detailRow: { alignItems: "flex-start", borderTopColor: "#eef1f4", borderTopWidth: 1, flexDirection: "row", gap: 12, paddingVertical: 9 },
   detailLabel: { color: "#778395", fontSize: 12, width: 112 },
   detailValue: { color: "#3f4b5d", flex: 1, fontSize: 13, textAlign: "right" },
+  detailHint: { color: "#778395", fontSize: 12, lineHeight: 18 },
+  companionRow: { borderTopColor: "#eef1f4", borderTopWidth: 1, paddingVertical: 8 },
+  companionName: { color: "#3f4b5d", fontSize: 13, fontWeight: "700" },
+  companionMeta: { color: "#778395", fontSize: 11, marginTop: 3 },
   detailErrorBlock: { padding: 18 },
   detailRetryButton: { alignSelf: "flex-start", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, marginTop: 12, paddingHorizontal: 14, paddingVertical: 9 },
   consoleModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },

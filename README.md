@@ -15,6 +15,7 @@ This first client layer provides:
 - confirmed device restart and shutdown actions;
 - virtual location controls with explicit apply and clear actions;
 - a device information panel for hardware, storage, battery, and regional metadata;
+- on-demand device screenshots, device renaming, paired-companion metadata, and home-screen layout summaries;
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
 - an installed-app panel that lists user apps and can launch or stop them through the host;

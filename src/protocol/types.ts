@@ -137,6 +137,50 @@ export type DeviceDetails = {
   battery: DeviceBattery | null;
 };
 
+export type CompanionDevice = {
+  identifier: string;
+  name: string | null;
+  product_type: string | null;
+  product_version: string | null;
+  build_version: string | null;
+};
+
+export type HomeScreenFolderStep = {
+  name: string | null;
+  page: number;
+  position: number;
+};
+
+export type HomeScreenAppLocation = {
+  bundle_id: string;
+  name: string | null;
+  container: "dock" | "page";
+  page: number | null;
+  position: number;
+  folders: HomeScreenFolderStep[];
+};
+
+export type HomeScreenIconMetrics = {
+  screen_width: number | null;
+  screen_height: number | null;
+  icon_width: number | null;
+  icon_height: number | null;
+  columns: number | null;
+  rows: number | null;
+  dock_max_count: number | null;
+  folder_columns: number | null;
+  folder_rows: number | null;
+  max_pages: number | null;
+  folder_max_pages: number | null;
+};
+
+export type HomeScreenLayout = {
+  apps: HomeScreenAppLocation[];
+  page_count: number;
+  metrics: HomeScreenIconMetrics | null;
+  truncated: boolean;
+};
+
 export type ClipboardContentKind = "text" | "image";
 
 /** Metadata-only clipboard notification; payload contents never cross the socket. */

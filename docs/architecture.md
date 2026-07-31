@@ -40,6 +40,13 @@ bounded read-only timeout surface as a retryable panel error. Numeric storage
 and battery values remain typed so the UI can distinguish an unavailable value
 from zero.
 
+The control screen also uses the server's read-only device extensions on demand:
+screenshots and wallpaper-like image resources are loaded through authenticated
+native image sources, while companion devices and home-screen layout data are
+decoded as typed JSON. Device renaming remains a bounded JSON command. None of
+these requests share the media socket or run during initial connection, so a
+slow CoreDevice metadata service cannot pause video input.
+
 App icons use the server's image endpoint directly through the native image
 loader. Each request carries both the bearer token and the selected session ID;
 an icon failure is isolated to that row and falls back to an initial instead of
