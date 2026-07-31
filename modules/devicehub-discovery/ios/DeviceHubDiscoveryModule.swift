@@ -2,6 +2,7 @@ import Foundation
 import ExpoModulesCore
 
 private let deviceHubServiceType = "_devicehub._tcp."
+private let missingLocalNetworkConfigurationCode = -72008
 
 /// Bridges the headless server's authenticated Bonjour advertisement to JS.
 /// The advertisement contains only endpoint metadata; the bearer token never
@@ -115,17 +116,23 @@ public final class DeviceHubDiscoveryModule: Module {
   }
 
   fileprivate func failed(_ service: NetService, error: [String: NSNumber]) {
-    let details = error.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
     sendEvent("onError", [
-      "message": "Unable to resolve DeviceHub service \(service.name)\(details.isEmpty ? "" : " (\(details))")",
+      "message": describe(error, fallback: "Unable to resolve DeviceHub service \(service.name)"),
     ])
   }
 
   fileprivate func browserFailed(_ error: [String: NSNumber]) {
-    let details = error.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
     sendEvent("onError", [
-      "message": "DeviceHub network discovery failed\(details.isEmpty ? "" : " (\(details))")",
+      "message": describe(error, fallback: "DeviceHub network discovery failed"),
     ])
+  }
+
+  private func describe(_ error: [String: NSNumber], fallback: String) -> String {
+    if error[NSNetServicesErrorCode]?.intValue == missingLocalNetworkConfigurationCode {
+      return "DeviceHub local-network discovery is not configured in this iOS build. Rebuild after Expo prebuild and allow Local Network access in Settings."
+    }
+    let details = error.map { "\($0.key)=\($0.value)" }.sorted().joined(separator: ", ")
+    return details.isEmpty ? fallback : "\(fallback) (\(details))"
   }
 
   private func serviceID(_ service: NetService) -> String {
