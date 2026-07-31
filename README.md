@@ -13,6 +13,7 @@ This first client layer provides:
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - text paste from the mobile keyboard into the active iPhone or iPad;
 - confirmed device restart and shutdown actions;
+- virtual location controls with explicit apply and clear actions;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
 - foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.

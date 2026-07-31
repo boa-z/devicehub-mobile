@@ -28,6 +28,12 @@ WebSocket input messages. The mobile UI requires an explicit destructive-action
 confirmation and uses a 12-second request deadline, slightly longer than the
 server's 10-second device command budget.
 
+Virtual location follows the same device-scoped HTTP boundary. The client reads
+the backend status before opening the editor, validates latitude/longitude
+locally, and exposes an explicit clear action so a test can restore the real
+device location. The server remains responsible for DVT/legacy backend choice
+and device readiness errors.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device

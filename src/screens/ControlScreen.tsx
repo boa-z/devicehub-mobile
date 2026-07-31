@@ -18,7 +18,7 @@ import {
 import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
-import type { Device, DeviceApp, MultiTouchContact } from "../protocol/types";
+import type { Device, DeviceApp, LocationStatus, MultiTouchContact } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 
 const NativeVideoView = DeviceHubVideoView as any;
@@ -94,6 +94,12 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [pasteText, setPasteText] = useState("");
   const [pasteBusy, setPasteBusy] = useState(false);
   const [pasteError, setPasteError] = useState<string | null>(null);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<LocationStatus | null>(null);
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [locationBusy, setLocationBusy] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const appState = useRef(AppState.currentState);
@@ -324,6 +330,63 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     );
   };
 
+  const openLocation = () => {
+    setLocationError(null);
+    setLocationOpen(true);
+    void (async () => {
+      try {
+        const next = await client.location(device.id);
+        setLocationStatus(next);
+        setLatitude(next.latitude === null ? "" : String(next.latitude));
+        setLongitude(next.longitude === null ? "" : String(next.longitude));
+      } catch (error) {
+        setLocationError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+  };
+
+  const applyLocation = async () => {
+    if (!latitude.trim() || !longitude.trim()) {
+      setLocationError("Enter both latitude and longitude.");
+      return;
+    }
+    const nextLatitude = Number(latitude);
+    const nextLongitude = Number(longitude);
+    if (!Number.isFinite(nextLatitude) || nextLatitude < -90 || nextLatitude > 90) {
+      setLocationError("Latitude must be between -90 and 90.");
+      return;
+    }
+    if (!Number.isFinite(nextLongitude) || nextLongitude < -180 || nextLongitude > 180) {
+      setLocationError("Longitude must be between -180 and 180.");
+      return;
+    }
+    setLocationBusy(true);
+    setLocationError(null);
+    try {
+      await client.setLocation(device.id, nextLatitude, nextLongitude);
+      setLocationStatus(await client.location(device.id));
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLocationBusy(false);
+    }
+  };
+
+  const clearLocation = async () => {
+    setLocationBusy(true);
+    setLocationError(null);
+    try {
+      await client.clearLocation(device.id);
+      setLocationStatus(await client.location(device.id));
+      setLatitude("");
+      setLongitude("");
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLocationBusy(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -416,6 +479,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("shutdown")} style={styles.secondaryButton}>
             <Text style={styles.secondaryDangerText}>Shut down</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openLocation} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Location</Text>
+          </Pressable>
         </View>
       </View>
       <Modal animationType="slide" onRequestClose={() => setAppsOpen(false)} visible={appsOpen}>
@@ -505,6 +571,69 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <Modal animationType="slide" onRequestClose={() => setLocationOpen(false)} visible={locationOpen}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.pasteModal}
+        >
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>Virtual location</Text>
+              <Text style={styles.appsSubtitle}>Simulate coordinates on the active device</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setLocationOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+          <View style={styles.pasteBody}>
+            <Text style={styles.locationStatusText}>
+              {locationStatus?.active
+                ? `Active · ${locationStatus.backend ?? "unknown backend"}`
+                : locationStatus?.available
+                  ? "Ready"
+                  : "Unavailable"}
+            </Text>
+            {locationStatus?.error ? <Text style={styles.appsError}>{locationStatus.error}</Text> : null}
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="numbers-and-punctuation"
+              onChangeText={setLatitude}
+              placeholder="Latitude (-90 to 90)"
+              placeholderTextColor="#8c96a5"
+              style={styles.locationInput}
+              value={latitude}
+            />
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="numbers-and-punctuation"
+              onChangeText={setLongitude}
+              placeholder="Longitude (-180 to 180)"
+              placeholderTextColor="#8c96a5"
+              style={styles.locationInput}
+              value={longitude}
+            />
+            {locationError ? <Text style={styles.appsError}>{locationError}</Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={locationBusy}
+              onPress={() => void applyLocation()}
+              style={({ pressed }) => [styles.pasteButton, pressed && styles.buttonPressed, locationBusy && styles.disabled]}
+            >
+              {locationBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>Apply location</Text>}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={locationBusy || !locationStatus?.active}
+              onPress={() => void clearLocation()}
+              style={({ pressed }) => [styles.locationClearButton, pressed && styles.buttonPressed, (locationBusy || !locationStatus?.active) && styles.disabled]}
+            >
+              <Text style={styles.locationClearText}>Clear simulation</Text>
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -569,4 +698,8 @@ const styles = StyleSheet.create({
   pasteInput: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, minHeight: 180, padding: 14 },
   pasteButton: { alignItems: "center", backgroundColor: "#2368c4", borderRadius: 10, justifyContent: "center", marginTop: 14, minHeight: 48 },
   pasteButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
+  locationStatusText: { color: "#3f4b5d", fontSize: 13, fontWeight: "700", marginBottom: 14 },
+  locationInput: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, marginBottom: 12, padding: 14 },
+  locationClearButton: { alignItems: "center", justifyContent: "center", marginTop: 8, minHeight: 42 },
+  locationClearText: { color: "#bd2d3b", fontSize: 14, fontWeight: "700" },
 });

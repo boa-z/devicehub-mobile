@@ -7,6 +7,7 @@ import type {
   ServerHello,
   DeviceApp,
   ForgetDeviceResult,
+  LocationStatus,
   PairDeviceResult,
 } from "./types";
 
@@ -197,6 +198,24 @@ export class DeviceHubClient {
   async shutdownDevice(deviceId: string) {
     await this.deviceRequest<void>(deviceId, "/api/device/shutdown", {
       method: "PUT",
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  async location(deviceId: string) {
+    return this.deviceRequest<LocationStatus>(deviceId, "/api/device/location");
+  }
+
+  async setLocation(deviceId: string, latitude: number, longitude: number) {
+    await this.deviceRequest<void>(deviceId, "/api/device/location", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ latitude, longitude }),
+    }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  async clearLocation(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/location", {
+      method: "DELETE",
     }, DEVICE_COMMAND_TIMEOUT_MS);
   }
 
