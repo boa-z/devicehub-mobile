@@ -16,6 +16,7 @@ This first client layer provides:
 - virtual location controls with explicit apply and clear actions;
 - a device information panel for hardware, storage, battery, and regional metadata;
 - authenticated installed-app icons with per-app fallback placeholders;
+- an on-demand bounded application console with incremental output polling;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
 - foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.

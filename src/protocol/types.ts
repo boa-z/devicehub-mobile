@@ -52,6 +52,27 @@ export type DeviceApp = {
   is_running: boolean | null;
 };
 
+export type AppConsolePhase = "stopped" | "starting" | "running" | "exited" | "failed";
+
+export type AppConsoleLine = {
+  sequence: number;
+  text: string;
+};
+
+export type AppConsoleSnapshot = {
+  phase: AppConsolePhase;
+  bundle_id: string | null;
+  started_at_ms: number | null;
+  ended_at_ms: number | null;
+  total_bytes: number;
+  total_lines: number;
+  dropped_lines: number;
+  next_sequence: number;
+  reset: boolean;
+  lines: AppConsoleLine[];
+  last_error: string | null;
+};
+
 export type PairDeviceResult = {
   outcome: "paired" | "denied" | "locked" | "timed_out" | "failed";
   error: string | null;

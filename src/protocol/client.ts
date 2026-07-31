@@ -6,6 +6,7 @@ import type {
   ServerMessage,
   ServerHello,
   DeviceApp,
+  AppConsoleSnapshot,
   DeviceDetails,
   ForgetDeviceResult,
   LocationStatus,
@@ -175,6 +176,27 @@ export class DeviceHubClient {
       `/api/device/apps/${encodeURIComponent(bundleId)}/stop`,
       { method: "PUT" },
     );
+  }
+
+  async startAppConsole(deviceId: string, bundleId: string) {
+    return this.deviceRequest<AppConsoleSnapshot>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/console`,
+      { method: "PUT" },
+      DEVICE_COMMAND_TIMEOUT_MS,
+    );
+  }
+
+  async appConsoleSnapshot(deviceId: string, after?: number) {
+    const query = after === undefined ? "" : `?after=${encodeURIComponent(String(after))}`;
+    return this.deviceRequest<AppConsoleSnapshot>(deviceId, `/api/device/app-console${query}`);
+  }
+
+  async stopAppConsole(deviceId: string, clear = false) {
+    const query = clear ? "?clear=true" : "";
+    return this.deviceRequest<AppConsoleSnapshot>(deviceId, `/api/device/app-console${query}`, {
+      method: "DELETE",
+    });
   }
 
   appIconSource(deviceId: string, bundleId: string) {

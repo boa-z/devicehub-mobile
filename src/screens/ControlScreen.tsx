@@ -20,7 +20,7 @@ import {
 import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
-import type { Device, DeviceApp, DeviceDetails, LocationStatus, MultiTouchContact } from "../protocol/types";
+import type { AppConsoleLine, AppConsoleSnapshot, Device, DeviceApp, DeviceDetails, LocationStatus, MultiTouchContact } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 
 const NativeVideoView = DeviceHubVideoView as any;
@@ -117,6 +117,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [details, setDetails] = useState<DeviceDetails | null>(null);
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [consoleBusy, setConsoleBusy] = useState(false);
+  const [consoleError, setConsoleError] = useState<string | null>(null);
+  const [consoleBundleId, setConsoleBundleId] = useState<string | null>(null);
+  const [consoleSnapshot, setConsoleSnapshot] = useState<AppConsoleSnapshot | null>(null);
+  const [consoleLines, setConsoleLines] = useState<AppConsoleLine[]>([]);
+  const consoleCursor = useRef<number | undefined>(undefined);
+  const consoleBundleRef = useRef<string | null>(null);
   const appIconSources = useMemo(
     () => new Map(apps.map((app) => [app.bundle_id, client.appIconSource(device.id, app.bundle_id)])),
     [apps, client, device.id],
@@ -243,6 +251,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
       resetNativeMedia();
+      const activeConsoleBundle = consoleBundleRef.current;
+      if (activeConsoleBundle) {
+        void client.stopAppConsole(device.id).catch(() => undefined);
+        consoleBundleRef.current = null;
+      }
       socket.close();
     };
   }, [socket]);
@@ -300,6 +313,62 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       setAppAction(null);
     }
   };
+
+  const mergeConsoleSnapshot = (next: AppConsoleSnapshot) => {
+    setConsoleSnapshot(next);
+    setConsoleLines((current) => {
+      if (next.reset || consoleCursor.current === undefined) return next.lines;
+      const merged = [...current, ...next.lines];
+      return merged.length > 1_000 ? merged.slice(-1_000) : merged;
+    });
+    consoleCursor.current = Math.max(0, next.next_sequence - 1);
+  };
+
+  const openConsole = async (app: DeviceApp) => {
+    if (consoleBusy || !connected) return;
+    setConsoleOpen(true);
+    setConsoleBundleId(app.bundle_id);
+    consoleBundleRef.current = app.bundle_id;
+    setConsoleBusy(true);
+    setConsoleError(null);
+    setConsoleSnapshot(null);
+    setConsoleLines([]);
+    consoleCursor.current = undefined;
+    try {
+      mergeConsoleSnapshot(await client.startAppConsole(device.id, app.bundle_id));
+    } catch (error) {
+      setConsoleError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConsoleBusy(false);
+    }
+  };
+
+  const closeConsole = () => {
+    setConsoleOpen(false);
+    const activeBundleId = consoleBundleRef.current;
+    if (!activeBundleId) return;
+    void client.stopAppConsole(device.id).catch(() => undefined);
+    consoleBundleRef.current = null;
+    setConsoleBundleId(null);
+  };
+
+  useEffect(() => {
+    if (!consoleOpen || !consoleBundleId || consoleBusy) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const next = await client.appConsoleSnapshot(device.id, consoleCursor.current);
+        if (!cancelled) mergeConsoleSnapshot(next);
+      } catch (error) {
+        if (!cancelled) setConsoleError(error instanceof Error ? error.message : String(error));
+      }
+    };
+    const timer = setInterval(() => void poll(), 1_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [client, consoleBundleId, consoleBusy, consoleOpen, device.id]);
 
   const openPaste = () => {
     setPasteText("");
@@ -568,19 +637,57 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                         {item.is_running ? "Running" : "Stopped"}
                       </Text>
                     </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={busy}
-                      onPress={() => void toggleApp(item)}
-                      style={({ pressed }) => [styles.appAction, pressed && styles.buttonPressed, busy && styles.disabled]}
-                    >
-                      {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.appActionText}>{item.is_running ? "Stop" : "Launch"}</Text>}
-                    </Pressable>
+                    <View style={styles.appActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={busy}
+                        onPress={() => void toggleApp(item)}
+                        style={({ pressed }) => [styles.appAction, pressed && styles.buttonPressed, busy && styles.disabled]}
+                      >
+                        {busy ? <ActivityIndicator color="#2368c4" /> : <Text style={styles.appActionText}>{item.is_running ? "Stop" : "Launch"}</Text>}
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={appsBusy || consoleBusy}
+                        onPress={() => void openConsole(item)}
+                        style={({ pressed }) => [styles.appConsoleAction, pressed && styles.buttonPressed, (appsBusy || consoleBusy) && styles.disabled]}
+                      >
+                        <Text style={styles.appConsoleText}>Console</Text>
+                      </Pressable>
+                    </View>
                   </View>
                 );
               }}
               ListEmptyComponent={<Text style={styles.appsEmpty}>No user apps were returned by the device.</Text>}
             />
+          )}
+        </View>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={closeConsole} visible={consoleOpen}>
+        <View style={styles.consoleModal}>
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>App console</Text>
+              <Text numberOfLines={1} style={styles.appsSubtitle}>{consoleBundleId ?? "Application"}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={closeConsole} style={styles.closeButton}>
+              <Text style={styles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+          {consoleError ? <Text style={styles.appsError}>{consoleError}</Text> : null}
+          {consoleBusy ? (
+            <View style={styles.appsLoading}><ActivityIndicator color="#2368c4" /></View>
+          ) : (
+            <ScrollView contentContainerStyle={styles.consoleBody}>
+              <Text style={styles.consoleStatus}>{consoleSnapshot?.phase ?? "stopped"} · {consoleSnapshot?.total_lines ?? 0} lines</Text>
+              {consoleLines.length === 0 ? (
+                <Text style={styles.appsEmpty}>No console output yet.</Text>
+              ) : (
+                <View style={styles.consoleLines}>
+                  {consoleLines.map((line) => <Text key={line.sequence} selectable style={styles.consoleLine}>{line.text}</Text>)}
+                </View>
+              )}
+            </ScrollView>
           )}
         </View>
       </Modal>
@@ -799,6 +906,9 @@ const styles = StyleSheet.create({
   appRunning: { color: "#2b9a66" },
   appAction: { alignItems: "center", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 38, minWidth: 72, paddingHorizontal: 10 },
   appActionText: { color: "#2368c4", fontSize: 13, fontWeight: "700" },
+  appActions: { alignItems: "stretch", gap: 5 },
+  appConsoleAction: { alignItems: "center", justifyContent: "center", minHeight: 26, paddingHorizontal: 5 },
+  appConsoleText: { color: "#778395", fontSize: 11, fontWeight: "600" },
   appsEmpty: { color: "#778395", fontSize: 14, lineHeight: 21, textAlign: "center" },
   pasteModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
   pasteHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingBottom: 14, paddingHorizontal: 18 },
@@ -818,4 +928,9 @@ const styles = StyleSheet.create({
   detailValue: { color: "#3f4b5d", flex: 1, fontSize: 13, textAlign: "right" },
   detailErrorBlock: { padding: 18 },
   detailRetryButton: { alignSelf: "flex-start", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, marginTop: 12, paddingHorizontal: 14, paddingVertical: 9 },
+  consoleModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
+  consoleBody: { flexGrow: 1, padding: 14 },
+  consoleStatus: { color: "#536273", fontSize: 12, marginBottom: 10 },
+  consoleLines: { backgroundColor: "#080d12", borderColor: "#273542", borderRadius: 8, borderWidth: 1, padding: 10 },
+  consoleLine: { color: "#d5e1ec", fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: 11, lineHeight: 17 },
 });

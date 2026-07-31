@@ -45,6 +45,12 @@ loader. Each request carries both the bearer token and the selected session ID;
 an icon failure is isolated to that row and falls back to an initial instead of
 failing the app list request.
 
+Application console capture is explicitly user-started. The client stores the
+server's sequence cursor, requests only lines after that cursor once per second,
+and stops the console service when the panel closes. The server's bounded line
+and byte retention remains the source of truth; a cursor reset replaces the
+mobile buffer instead of duplicating output.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device
