@@ -790,7 +790,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             </View>
             <Text style={styles.controlSectionTitle}>{t("deviceControls")}</Text>
             <View style={styles.controlActionList}>
-              <Pressable accessibilityRole="button" disabled={connected} onPress={reconnectSession} style={[styles.controlActionButton, connected && styles.disabled]}>
+              <Pressable accessibilityRole="button" onPress={reconnectSession} style={styles.controlActionButton}>
                 <Text style={styles.controlActionText}>{t("reconnect")}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
