@@ -177,6 +177,16 @@ export class DeviceHubClient {
     );
   }
 
+  appIconSource(deviceId: string, bundleId: string) {
+    return {
+      uri: `${this.connection.origin}/api/device/apps/${encodeURIComponent(bundleId)}/icon`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
+  }
+
   async pasteDeviceText(deviceId: string, text: string) {
     await this.deviceRequest<void>(deviceId, "/api/device/text/paste", {
       method: "PUT",

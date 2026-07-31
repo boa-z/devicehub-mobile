@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -101,6 +102,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
+  const [appIconErrors, setAppIconErrors] = useState<Record<string, boolean>>({});
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [pasteBusy, setPasteBusy] = useState(false);
@@ -115,6 +117,10 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [details, setDetails] = useState<DeviceDetails | null>(null);
   const [detailsBusy, setDetailsBusy] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const appIconSources = useMemo(
+    () => new Map(apps.map((app) => [app.bundle_id, client.appIconSource(device.id, app.bundle_id)])),
+    [apps, client, device.id],
+  );
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const appState = useRef(AppState.currentState);
@@ -272,6 +278,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openApps = () => {
+    setAppIconErrors({});
     setAppsOpen(true);
     void loadApps();
   };
@@ -544,6 +551,16 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                 const busy = appAction === item.bundle_id;
                 return (
                   <View style={styles.appRow}>
+                    {appIconErrors[item.bundle_id] ? (
+                      <View style={styles.appIconFallback}><Text style={styles.appIconFallbackText}>{(item.name || item.bundle_id).slice(0, 1).toUpperCase()}</Text></View>
+                    ) : (
+                      <Image
+                        accessibilityLabel={`${item.name || item.bundle_id} icon`}
+                        onError={() => setAppIconErrors((current) => ({ ...current, [item.bundle_id]: true }))}
+                        source={appIconSources.get(item.bundle_id)}
+                        style={styles.appIcon}
+                      />
+                    )}
                     <View style={styles.appCopy}>
                       <Text numberOfLines={1} style={styles.appName}>{item.name || item.bundle_id}</Text>
                       <Text numberOfLines={1} style={styles.appBundle}>{item.bundle_id}</Text>
@@ -772,6 +789,9 @@ const styles = StyleSheet.create({
   appsList: { padding: 14 },
   appsEmptyList: { flexGrow: 1, justifyContent: "center", padding: 24 },
   appRow: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#dce2e9", borderRadius: 12, borderWidth: 1, flexDirection: "row", marginBottom: 10, padding: 13 },
+  appIcon: { backgroundColor: "#eef2f5", borderRadius: 10, height: 44, marginRight: 12, width: 44 },
+  appIconFallback: { alignItems: "center", backgroundColor: "#e6f0ff", borderRadius: 10, height: 44, justifyContent: "center", marginRight: 12, width: 44 },
+  appIconFallbackText: { color: "#2368c4", fontSize: 19, fontWeight: "800" },
   appCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   appName: { color: "#152033", fontSize: 15, fontWeight: "700" },
   appBundle: { color: "#778395", fontSize: 11, marginTop: 3 },

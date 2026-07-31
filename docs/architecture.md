@@ -40,6 +40,11 @@ bounded read-only timeout surface as a retryable panel error. Numeric storage
 and battery values remain typed so the UI can distinguish an unavailable value
 from zero.
 
+App icons use the server's image endpoint directly through the native image
+loader. Each request carries both the bearer token and the selected session ID;
+an icon failure is isolated to that row and falls back to an initial instead of
+failing the app list request.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device
