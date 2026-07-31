@@ -1,0 +1,118 @@
+name: Publish iOS Nightly IPA
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: devicehub-mobile-nightly-ipa
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build and publish unsigned IPA
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      IPA_NAME: devicehub-mobile-unsigned.ipa
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Generate iOS project
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: Install CocoaPods dependencies
+        run: npx pod-install ios
+
+      - name: Build unsigned iOS archive
+        env:
+          ARCHIVE_PATH: ${{ runner.temp }}/devicehub-mobile.xcarchive
+        run: >-
+          xcodebuild
+          -workspace ios/devicehubmobile.xcworkspace
+          -scheme devicehubmobile
+          -configuration Release
+          -destination generic/platform=iOS
+          -archivePath "$ARCHIVE_PATH"
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
+          COMPILER_INDEX_STORE_ENABLE=NO
+          archive
+
+      - name: Package unsigned IPA
+        env:
+          ARCHIVE_PATH: ${{ runner.temp }}/devicehub-mobile.xcarchive
+        run: |
+          set -euo pipefail
+
+          app_path="$ARCHIVE_PATH/Products/Applications/devicehubmobile.app"
+          ipa_root="$RUNNER_TEMP/devicehub-mobile-ipa"
+          ipa_path="$GITHUB_WORKSPACE/$IPA_NAME"
+
+          test -d "$app_path"
+          test ! -e "$app_path/embedded.mobileprovision"
+          rm -rf "$ipa_root" "$ipa_path"
+          mkdir -p "$ipa_root/Payload"
+          ditto "$app_path" "$ipa_root/Payload/devicehubmobile.app"
+          (
+            cd "$ipa_root"
+            ditto -c -k --sequesterRsrc --keepParent Payload "$ipa_path"
+          )
+
+          test -s "$ipa_path"
+          unzip -Z1 "$ipa_path" | grep -Fxq "Payload/devicehubmobile.app/Info.plist"
+          shasum -a 256 "$ipa_path" > "$ipa_path.sha256"
+
+      - name: Upload IPA as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: devicehub-mobile-unsigned-ipa
+          path: |
+            devicehub-mobile-unsigned.ipa
+            devicehub-mobile-unsigned.ipa.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create or update nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create nightly \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DeviceHub Mobile Nightly" \
+              --notes "Automated unsigned iOS IPA build from the main branch. This is a prerelease and is not signed for App Store or direct installation." \
+              --prerelease
+          else
+            gh release edit nightly \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "DeviceHub Mobile Nightly" \
+              --prerelease
+          fi
+
+          gh release upload nightly \
+            --repo "$GITHUB_REPOSITORY" \
+            "$IPA_NAME" \
+            "$IPA_NAME.sha256" \
+            --clobber

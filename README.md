@@ -37,6 +37,12 @@ The generated native projects and Pods are local build products and are intentio
 
 Pull requests run the same TypeScript and Expo bundle checks plus Android Debug and iOS Simulator development builds in GitHub Actions. A green JavaScript bundle check does not replace either native build: native media code is compiled separately for each platform.
 
+## Nightly iOS IPA
+
+The `Publish iOS Nightly IPA` workflow builds a Release iOS archive without Apple signing and publishes it to the `nightly` prerelease. It runs for pushes to `main`, once per day, or manually from the Actions tab. The workflow also keeps a 14-day Actions artifact for troubleshooting.
+
+Download `devicehub-mobile-unsigned.ipa` from the nightly release and verify it with the accompanying `.sha256` file. The IPA contains an unsigned `.app`; it cannot be installed directly on an iPhone or iPad. Installation requires your own Apple development or distribution certificate, a matching provisioning profile, and a re-signing step. It is not an App Store or TestFlight package.
+
 Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
 The headless server currently uses HTTP for a trusted local network, so Android's cleartext permission is enabled for this client. Do not expose that listener directly to the Internet; use a TLS reverse proxy or a private VPN before using it outside a trusted LAN.
