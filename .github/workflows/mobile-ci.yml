@@ -1,0 +1,72 @@
+name: Mobile CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mobile-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    name: TypeScript and Expo bundles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx expo export --platform ios
+      - run: npx expo export --platform android
+      - run: npx expo-modules-autolinking verify --platform apple
+      - run: npx expo-modules-autolinking verify --platform android
+
+  android:
+    name: Android development build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - run: npm ci
+      - run: npx expo prebuild --platform android --no-install
+      - run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
+        working-directory: android
+
+  ios:
+    name: iOS simulator development build
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx expo prebuild --platform ios --no-install
+      - run: npx pod-install ios
+      - run: >-
+          xcodebuild
+          -workspace ios/devicehubmobile.xcworkspace
+          -scheme devicehubmobile
+          -sdk iphonesimulator
+          -configuration Debug
+          -derivedDataPath $RUNNER_TEMP/devicehub-mobile-derived
+          CODE_SIGNING_ALLOWED=NO
+          COMPILER_INDEX_STORE_ENABLE=NO
+          build

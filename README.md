@@ -35,6 +35,8 @@ npm run android
 
 The generated native projects and Pods are local build products and are intentionally not committed.
 
+Pull requests run the same TypeScript and Expo bundle checks plus Android Debug and iOS Simulator development builds in GitHub Actions. A green JavaScript bundle check does not replace either native build: native media code is compiled separately for each platform.
+
 Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
 ## Protocol boundary
