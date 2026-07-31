@@ -3,10 +3,13 @@ import {
   AppState,
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   View,
   type GestureResponderEvent,
   type LayoutChangeEvent,
@@ -86,6 +89,10 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
   const [appsError, setAppsError] = useState<string | null>(null);
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const appState = useRef(AppState.currentState);
@@ -265,6 +272,26 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     }
   };
 
+  const openPaste = () => {
+    setPasteText("");
+    setPasteError(null);
+    setPasteOpen(true);
+  };
+
+  const submitPaste = async () => {
+    if (!pasteText || pasteBusy) return;
+    setPasteBusy(true);
+    setPasteError(null);
+    try {
+      await client.pasteDeviceText(device.id, pasteText);
+      setPasteOpen(false);
+    } catch (error) {
+      setPasteError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPasteBusy(false);
+    }
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -348,6 +375,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "right" })} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>Rotate right</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Paste text</Text>
+          </Pressable>
         </View>
       </View>
       <Modal animationType="slide" onRequestClose={() => setAppsOpen(false)} visible={appsOpen}>
@@ -397,6 +427,45 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             />
           )}
         </View>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={() => setPasteOpen(false)} visible={pasteOpen}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.pasteModal}
+        >
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>Paste text</Text>
+              <Text style={styles.appsSubtitle}>Send text to the active iPhone</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setPasteOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>Cancel</Text>
+            </Pressable>
+          </View>
+          <View style={styles.pasteBody}>
+            <TextInput
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+              maxLength={1024}
+              onChangeText={setPasteText}
+              placeholder="Text to paste on the device"
+              placeholderTextColor="#8c96a5"
+              style={styles.pasteInput}
+              textAlignVertical="top"
+              value={pasteText}
+            />
+            {pasteError ? <Text style={styles.appsError}>{pasteError}</Text> : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={!pasteText || pasteBusy}
+              onPress={() => void submitPaste()}
+              style={({ pressed }) => [styles.pasteButton, pressed && styles.buttonPressed, (!pasteText || pasteBusy) && styles.disabled]}
+            >
+              {pasteBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.pasteButtonText}>Send to device</Text>}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -455,4 +524,10 @@ const styles = StyleSheet.create({
   appAction: { alignItems: "center", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 38, minWidth: 72, paddingHorizontal: 10 },
   appActionText: { color: "#2368c4", fontSize: 13, fontWeight: "700" },
   appsEmpty: { color: "#778395", fontSize: 14, lineHeight: 21, textAlign: "center" },
+  pasteModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
+  pasteHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingBottom: 14, paddingHorizontal: 18 },
+  pasteBody: { padding: 18 },
+  pasteInput: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, minHeight: 180, padding: 14 },
+  pasteButton: { alignItems: "center", backgroundColor: "#2368c4", borderRadius: 10, justifyContent: "center", marginTop: 14, minHeight: 48 },
+  pasteButtonText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
 });

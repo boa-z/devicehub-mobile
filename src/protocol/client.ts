@@ -173,6 +173,14 @@ export class DeviceHubClient {
     );
   }
 
+  async pasteDeviceText(deviceId: string, text: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/text/paste", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {
     return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }

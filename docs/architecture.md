@@ -18,6 +18,11 @@ Device-scoped HTTP operations, such as app listing and app lifecycle control,
 carry the selected session ID in `x-devicehub-device`. This keeps multi-device
 selection explicit without changing the bearer-token or WebSocket protocol.
 
+Text paste is also an authenticated, device-scoped HTTP operation. It remains
+outside the media WebSocket because it has request validation and a bounded
+completion response; the server rejects empty text, NUL bytes, and payloads over
+1,024 characters.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device
