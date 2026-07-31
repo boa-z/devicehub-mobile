@@ -11,6 +11,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { useI18n } from "../i18n";
 import { DeviceHubClient } from "../protocol/client";
 import type { Device, DeviceFileEntry, DeviceFileList } from "../protocol/types";
@@ -27,6 +30,8 @@ type Prompt = {
   path: string;
   value: string;
 } | null;
+
+const MAX_TRANSFER_BYTES = 64 * 1024 * 1024;
 
 function normalizePath(path: string) {
   const normalized = `/${path}`.replace(/\/+/g, "/");
@@ -164,6 +169,76 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     ]);
   };
 
+  const importFile = async () => {
+    if (mutationBusy || loading) return;
+    const result = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: "*/*",
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    if (asset.size !== undefined && asset.size > MAX_TRANSFER_BYTES) {
+      setError(t("fileTooLarge"));
+      return;
+    }
+    setMutationBusy(true);
+    setError(null);
+    try {
+      const source = client.deviceFileImportSource(device.id, normalizePath(path), asset.name);
+      const response = await FileSystem.uploadAsync(source.uri, asset.uri, {
+        headers: {
+          ...source.headers,
+          "content-type": asset.mimeType || "application/octet-stream",
+        },
+        httpMethod: "PUT",
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+      });
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(response.body || `HTTP ${response.status}`);
+      }
+      await load();
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : String(importError));
+    } finally {
+      setMutationBusy(false);
+    }
+  };
+
+  const exportFile = async (entry: DeviceFileEntry) => {
+    if (entry.kind !== "file" || mutationBusy || loading) return;
+    const cacheDirectory = FileSystem.cacheDirectory;
+    if (!cacheDirectory) {
+      setError(t("fileTransferUnavailable"));
+      return;
+    }
+    if (!(await Sharing.isAvailableAsync())) {
+      setError(t("fileTransferUnavailable"));
+      return;
+    }
+    setMutationBusy(true);
+    setError(null);
+    const safeName = entry.name.replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 120) || "device-file";
+    const destination = `${cacheDirectory}devicehub-${Date.now()}-${safeName}`;
+    try {
+      const source = client.deviceFileExportSource(device.id, entry.path, entry.name);
+      const result = await FileSystem.downloadAsync(source.uri, destination, { headers: source.headers });
+      if (result.status < 200 || result.status >= 300) {
+        const body = await FileSystem.readAsStringAsync(result.uri).catch(() => "");
+        throw new Error(body || `HTTP ${result.status}`);
+      }
+      await Sharing.shareAsync(result.uri, {
+        dialogTitle: t("exportFile"),
+        mimeType: "application/octet-stream",
+      });
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : String(exportError));
+    } finally {
+      await FileSystem.deleteAsync(destination, { idempotent: true }).catch(() => undefined);
+      setMutationBusy(false);
+    }
+  };
+
   return (
     <Modal animationType="slide" onRequestClose={onClose} visible={visible}>
       <View style={[styles.root, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
@@ -190,6 +265,9 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
           <Pressable accessibilityRole="button" disabled={loading || mutationBusy} onPress={openDirectory} style={[styles.toolbarButton, (loading || mutationBusy) && styles.disabled]}>
             <Text style={styles.toolbarText}>{t("newFolder")}</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={loading || mutationBusy} onPress={() => void importFile()} style={[styles.toolbarButton, (loading || mutationBusy) && styles.disabled]}>
+            <Text style={styles.toolbarText}>{t("importFile")}</Text>
+          </Pressable>
         </View>
         {error ? <Text style={styles.error}>{error}</Text> : null}
         {listing?.truncated ? <Text style={styles.warning}>{t("truncated")}</Text> : null}
@@ -213,6 +291,11 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
                   <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => openRename(item)} style={styles.rowButton}>
                     <Text style={styles.rowButtonText}>{t("rename")}</Text>
                   </Pressable>
+                  {item.kind === "file" ? (
+                    <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => void exportFile(item)} style={styles.rowButton}>
+                      <Text style={styles.rowButtonText}>{t("exportFile")}</Text>
+                    </Pressable>
+                  ) : null}
                   <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => remove(item)} style={styles.rowButton}>
                     <Text style={styles.deleteText}>{t("delete")}</Text>
                   </Pressable>

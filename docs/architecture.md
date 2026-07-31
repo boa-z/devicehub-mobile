@@ -61,9 +61,11 @@ mobile buffer instead of duplicating output.
 The mobile Files action is an authenticated AFC browser. It lists one
 directory at a time and keeps the current path in the screen, while rename,
 directory creation, and deletion use the server's device-scoped JSON routes.
-The first mobile implementation intentionally omits import/export until the
-iOS document picker and Android document provider can share one transfer
-contract; this keeps the available actions honest on both client platforms.
+Single-file import uses Expo's document provider and the server's bounded raw
+browser-upload route. Single-file export uses the same device-scoped download
+route, writes to the native cache with Expo FileSystem, and opens the platform
+share sheet. The protocol client only constructs authenticated transfer URLs;
+native file I/O stays in the screen boundary.
 
 Performance and device logs use separate, demand-gated HTTP controls. The
 mobile workbench polls performance snapshots and process inventory at a bounded

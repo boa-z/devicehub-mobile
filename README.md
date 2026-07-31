@@ -16,7 +16,7 @@ This first client layer provides:
 - virtual location controls with explicit apply and clear actions;
 - a device information panel for hardware, storage, battery, and regional metadata;
 - on-demand device screenshots, device renaming, paired-companion metadata, and home-screen layout summaries;
-- an authenticated AFC file browser with directory navigation, refresh, rename, create-directory, and delete actions;
+- an authenticated AFC file browser with directory navigation, refresh, rename, create-directory, delete, single-file import, and single-file export/share actions;
 - a device performance and log workbench with explicit sampling/log-stream controls, process and service-health views, and bounded incremental log polling;
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
@@ -93,11 +93,12 @@ Remote targets must be paired and connected to the host running DeviceHub. This 
 
 The mobile app can launch or stop applications already installed on the target through the authenticated host API. It intentionally does not install, sign, or sideload applications.
 
-The Files action in the control screen is the first mobile AFC surface. It is
-limited to browsing and basic device-side management so it does not expose a
-file picker or transfer action that is unavailable on every client platform.
-Import and export can be added later through native document-provider
-integrations without changing the device-scoped HTTP boundary.
+The Files action uses the server's device-scoped browser transfer routes. A
+native document provider selects one local file for import; exported files are
+downloaded to the app cache and handed to the platform share sheet. Transfers
+are bounded by the server's 64 MiB browser-upload limit, and directories remain
+available for browsing and device-side management but are not exported by the
+mobile client.
 
 The Performance action reads the existing device-scoped performance and log
 routes. Sampling and log streaming are opt-in, and a panel only stops a demand

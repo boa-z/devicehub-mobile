@@ -375,6 +375,28 @@ export class DeviceHubClient {
     );
   }
 
+  deviceFileImportSource(deviceId: string, directory: string, name: string) {
+    const query = new URLSearchParams({ directory, name });
+    return {
+      uri: `${this.connection.origin}/api/device/files/browser-import?${query.toString()}`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
+  }
+
+  deviceFileExportSource(deviceId: string, path: string, name: string) {
+    const query = new URLSearchParams({ path, name });
+    return {
+      uri: `${this.connection.origin}/api/device/files/browser-export?${query.toString()}`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
+  }
+
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {
     return new DeviceHubSocket(this.connection, deviceId, this.platform, callbacks);
   }

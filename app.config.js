@@ -21,6 +21,7 @@ module.exports = ({ config }) => {
 
   return {
     ...base,
+    plugins: [...(base.plugins || []), "expo-sharing"],
     version,
     ios: {
       ...(base.ios || {}),
