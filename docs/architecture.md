@@ -15,6 +15,8 @@ React Native screens
 
 `modules/devicehub-media` owns platform media primitives. On iOS, HEVC access units are converted to `CMSampleBuffer` values and queued to `AVSampleBufferDisplayLayer`; PCM16 is converted to `AVAudioPCMBuffer` and scheduled on `AVAudioPlayerNode`. The display queue drops frames when the layer is not ready, so a stalled native renderer cannot grow an unbounded JS queue.
 
+The access token is stored only through `expo-secure-store` (Keychain on iOS and Keystore-backed storage on Android). A user changing the server explicitly clears the saved credential.
+
 The Android module currently exposes the same API as a no-op adapter. This keeps connection and input behavior testable on Android while the future MediaCodec/AudioTrack implementation can be added without changing screens or the server protocol.
 
 ## Handshake

@@ -100,26 +100,39 @@ export class DeviceHubClient {
 }
 
 export class DeviceHubSocket {
-  private readonly socket: WebSocket;
+  private socket: WebSocket | null = null;
   private closed = false;
   private leaseGranted = false;
   private readonly callbacks: SocketCallbacks;
   private readonly listeners = new Set<SocketCallbacks>();
+  private readonly connection: DeviceHubConnection;
+  private readonly deviceId: string;
+  private readonly platform: MobilePlatform;
 
   constructor(
     connection: DeviceHubConnection,
     deviceId: string,
-    private readonly platform: MobilePlatform,
+    platform: MobilePlatform,
     callbacks: SocketCallbacks = {},
   ) {
+    this.connection = connection;
+    this.deviceId = deviceId;
+    this.platform = platform;
     this.callbacks = callbacks;
-    const query = new URLSearchParams({ device_id: deviceId });
-    this.socket = new WebSocket(
-      `${websocketOrigin(connection.origin)}/api/ws?${query.toString()}`,
-      ["devicehub-mask", connection.token],
+    this.open();
+  }
+
+  private open() {
+    const query = new URLSearchParams({ device_id: this.deviceId });
+    const socket = new WebSocket(
+      `${websocketOrigin(this.connection.origin)}/api/ws?${query.toString()}`,
+      ["devicehub-mask", this.connection.token],
     );
-    this.socket.binaryType = "arraybuffer";
-    this.socket.onopen = () => {
+    this.socket = socket;
+    socket.binaryType = "arraybuffer";
+    socket.onopen = () => {
+      if (this.socket !== socket || this.closed) return;
+      this.leaseGranted = false;
       this.send({
         type: "client_hello",
         protocol_version: 1,
@@ -129,9 +142,18 @@ export class DeviceHubSocket {
       });
       this.dispatch((listener) => listener.onOpen?.());
     };
-    this.socket.onerror = (event) => this.dispatch((listener) => listener.onError?.(event));
-    this.socket.onclose = (event) => this.dispatch((listener) => listener.onClose?.(event));
-    this.socket.onmessage = (event) => void this.handleMessage(event.data);
+    socket.onerror = (event) => {
+      if (this.socket === socket) this.dispatch((listener) => listener.onError?.(event));
+    };
+    socket.onclose = (event) => {
+      if (this.socket !== socket) return;
+      this.socket = null;
+      this.leaseGranted = false;
+      this.dispatch((listener) => listener.onClose?.(event));
+    };
+    socket.onmessage = (event) => {
+      if (this.socket === socket) void this.handleMessage(socket, event.data);
+    };
   }
 
   subscribe(callbacks: SocketCallbacks) {
@@ -140,7 +162,7 @@ export class DeviceHubSocket {
   }
 
   get readyState() {
-    return this.socket.readyState;
+    return this.socket?.readyState ?? 3;
   }
 
   get controlGranted() {
@@ -148,19 +170,27 @@ export class DeviceHubSocket {
   }
 
   send(command: DeviceHubCommand) {
-    if (this.closed || this.socket.readyState !== 1) return false;
+    if (this.closed || !this.socket || this.socket.readyState !== 1) return false;
     this.socket.send(JSON.stringify(command));
+    return true;
+  }
+
+  reconnect() {
+    if (this.closed || this.socket) return false;
+    this.open();
     return true;
   }
 
   close() {
     if (this.closed) return;
     this.closed = true;
-    this.socket.close();
+    this.socket?.close();
+    this.socket = null;
   }
 
-  private async handleMessage(data: unknown) {
+  private async handleMessage(source: WebSocket, data: unknown) {
     try {
+      if (this.socket !== source || this.closed) return;
       if (typeof data === "string") {
         const message = JSON.parse(data) as ServerMessage;
         this.dispatch((listener) => listener.onMessage?.(message));
@@ -180,6 +210,7 @@ export class DeviceHubSocket {
           : data && typeof (data as Blob).arrayBuffer === "function"
             ? await (data as Blob).arrayBuffer()
             : null;
+      if (this.socket !== source || this.closed) return;
       if (!buffer) return;
       const packet = parseMediaPacket(buffer);
       if (packet) this.dispatch((listener) => listener.onMedia?.(packet));

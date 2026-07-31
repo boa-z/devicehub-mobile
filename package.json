@@ -6,6 +6,7 @@
     "devicehub-media": "file:modules/devicehub-media",
     "expo": "~57.0.9",
     "expo-modules-core": "~57.0.8",
+    "expo-secure-store": "~57.0.1",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.2"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -21,6 +21,9 @@ type Props = {
 export function ConnectionScreen({ initialOrigin, initialToken, busy, error, onSubmit }: Props) {
   const [origin, setOrigin] = useState(initialOrigin);
   const [token, setToken] = useState(initialToken);
+
+  useEffect(() => setOrigin(initialOrigin), [initialOrigin]);
+  useEffect(() => setToken(initialToken), [initialToken]);
 
   return (
     <KeyboardAvoidingView

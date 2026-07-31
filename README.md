@@ -7,6 +7,7 @@ DeviceHub Mobile is a React Native client for connecting to a DeviceHub headless
 This first client layer provides:
 
 - authenticated service connection with the same access token used by the headless web client;
+- Keychain/Keystore-backed storage for the last connection (the token is never written to a plain-text app preference);
 - device discovery, refresh, connect, and session status polling;
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
@@ -37,3 +38,5 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 - WebSocket uses `/api/ws?device_id=<selection id>` and the `devicehub-mask`/token subprotocols.
 
 Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to iOS devices and does not add Android target-device support.
+
+When the control socket drops, the iOS client retries with bounded exponential backoff (500 ms to 8 s). Leaving the control screen cancels the retry and releases media demand.
