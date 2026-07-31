@@ -58,6 +58,13 @@ and stops the console service when the panel closes. The server's bounded line
 and byte retention remains the source of truth; a cursor reset replaces the
 mobile buffer instead of duplicating output.
 
+The mobile Files action is an authenticated AFC browser. It lists one
+directory at a time and keeps the current path in the screen, while rename,
+directory creation, and deletion use the server's device-scoped JSON routes.
+The first mobile implementation intentionally omits import/export until the
+iOS document picker and Android document provider can share one transfer
+contract; this keeps the available actions honest on both client platforms.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device

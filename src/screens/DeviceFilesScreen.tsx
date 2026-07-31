@@ -1,0 +1,297 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { useI18n } from "../i18n";
+import { DeviceHubClient } from "../protocol/client";
+import type { Device, DeviceFileEntry, DeviceFileList } from "../protocol/types";
+
+type Props = {
+  client: DeviceHubClient;
+  device: Device;
+  visible: boolean;
+  onClose: () => void;
+};
+
+type Prompt = {
+  mode: "rename" | "directory";
+  path: string;
+  value: string;
+} | null;
+
+function normalizePath(path: string) {
+  const normalized = `/${path}`.replace(/\/+/g, "/");
+  if (normalized === "/") return normalized;
+  return normalized.replace(/\/+$/, "") || "/";
+}
+
+function parentPath(path: string) {
+  const normalized = normalizePath(path);
+  if (normalized === "/") return "/";
+  const separator = normalized.lastIndexOf("/");
+  return separator <= 0 ? "/" : normalized.slice(0, separator);
+}
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value) || value < 0) return "-";
+  if (value < 1_024) return `${value} B`;
+  if (value < 1_024 ** 2) return `${(value / 1_024).toFixed(1)} KB`;
+  if (value < 1_024 ** 3) return `${(value / 1_024 ** 2).toFixed(1)} MB`;
+  return `${(value / 1_024 ** 3).toFixed(1)} GB`;
+}
+
+function validName(value: string) {
+  const name = value.trim();
+  return Boolean(name)
+    && name !== "."
+    && name !== ".."
+    && !name.includes("/")
+    && !name.includes("\\")
+    && !Array.from(name).some((character) => character.charCodeAt(0) < 32);
+}
+
+export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
+  const { t } = useI18n();
+  const [path, setPath] = useState("/");
+  const [listing, setListing] = useState<DeviceFileList | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [mutationBusy, setMutationBusy] = useState(false);
+  const [prompt, setPrompt] = useState<Prompt>(null);
+
+  const load = useCallback(async (nextPath = path) => {
+    setLoading(true);
+    setError(null);
+    try {
+      setListing(await client.listDeviceFiles(device.id, normalizePath(nextPath)));
+    } catch (loadError) {
+      setListing(null);
+      setError(loadError instanceof Error ? loadError.message : String(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, [client, device.id, path]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setPath("/");
+    void load("/");
+  }, [visible, client, device.id]);
+
+  const entries = useMemo(() => {
+    if (!listing) return [];
+    return [...listing.entries].sort((left, right) => {
+      if (left.kind === "directory" && right.kind !== "directory") return -1;
+      if (left.kind !== "directory" && right.kind === "directory") return 1;
+      return left.name.localeCompare(right.name);
+    });
+  }, [listing]);
+
+  const navigate = (entry: DeviceFileEntry) => {
+    if (entry.kind !== "directory") return;
+    const nextPath = normalizePath(entry.path);
+    setPath(nextPath);
+    void load(nextPath);
+  };
+
+  const goParent = () => {
+    const nextPath = parentPath(path);
+    setPath(nextPath);
+    void load(nextPath);
+  };
+
+  const openRename = (entry: DeviceFileEntry) => {
+    setPrompt({ mode: "rename", path: entry.path, value: entry.name });
+  };
+
+  const openDirectory = () => {
+    setPrompt({ mode: "directory", path, value: "" });
+  };
+
+  const submitPrompt = async () => {
+    if (!prompt || !validName(prompt.value)) {
+      setError(t("fileNameInvalid"));
+      return;
+    }
+    setMutationBusy(true);
+    setError(null);
+    try {
+      if (prompt.mode === "rename") {
+        await client.renameDeviceFile(device.id, prompt.path, prompt.value.trim());
+      } else {
+        await client.createDeviceDirectory(device.id, normalizePath(prompt.path), prompt.value.trim());
+      }
+      setPrompt(null);
+      await load();
+    } catch (mutationError) {
+      setError(mutationError instanceof Error ? mutationError.message : String(mutationError));
+    } finally {
+      setMutationBusy(false);
+    }
+  };
+
+  const remove = (entry: DeviceFileEntry) => {
+    Alert.alert(t("deleteFileTitle"), t("deleteFilePrompt", { name: entry.name }), [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("deleteAction"),
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setMutationBusy(true);
+            setError(null);
+            try {
+              await client.deleteDeviceFile(device.id, entry.path);
+              await load();
+            } catch (deleteError) {
+              setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
+            } finally {
+              setMutationBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} visible={visible}>
+      <View style={styles.root}>
+        <View style={styles.header}>
+          <Pressable accessibilityRole="button" onPress={onClose} style={styles.headerButton}>
+            <Text style={styles.headerButtonText}>{t("close")}</Text>
+          </Pressable>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>{t("deviceFiles")}</Text>
+            <Text numberOfLines={1} style={styles.subtitle}>{device.name || device.udid}</Text>
+          </View>
+          <Pressable accessibilityRole="button" disabled={loading || mutationBusy} onPress={() => void load()} style={styles.headerButton}>
+            <Text style={styles.headerButtonText}>{t("refresh")}</Text>
+          </Pressable>
+        </View>
+        <View style={styles.toolbar}>
+          <View style={styles.pathCopy}>
+            <Text style={styles.pathLabel}>{t("currentPath")}</Text>
+            <Text numberOfLines={1} style={styles.path}>{listing?.path || path}</Text>
+          </View>
+          <Pressable accessibilityRole="button" disabled={path === "/" || loading || mutationBusy} onPress={goParent} style={[styles.toolbarButton, (path === "/" || loading || mutationBusy) && styles.disabled]}>
+            <Text style={styles.toolbarText}>{t("parent")}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={loading || mutationBusy} onPress={openDirectory} style={[styles.toolbarButton, (loading || mutationBusy) && styles.disabled]}>
+            <Text style={styles.toolbarText}>{t("newFolder")}</Text>
+          </Pressable>
+        </View>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {listing?.truncated ? <Text style={styles.warning}>{t("truncated")}</Text> : null}
+        {loading && !listing ? (
+          <View style={styles.loading}><ActivityIndicator color="#2368c4" /><Text style={styles.loadingText}>{t("loadingFiles")}</Text></View>
+        ) : (
+          <FlatList
+            contentContainerStyle={entries.length === 0 ? styles.emptyList : styles.list}
+            data={entries}
+            keyExtractor={(entry) => entry.path}
+            renderItem={({ item }) => (
+              <View style={styles.row}>
+                <Pressable accessibilityRole={item.kind === "directory" ? "button" : undefined} disabled={item.kind !== "directory" || mutationBusy} onPress={() => navigate(item)} style={styles.rowMain}>
+                  <Text style={styles.icon}>{item.kind === "directory" ? "▣" : "□"}</Text>
+                  <View style={styles.rowCopy}>
+                    <Text numberOfLines={1} style={styles.name}>{item.name}</Text>
+                    <Text numberOfLines={1} style={styles.meta}>{item.kind === "directory" ? t("directory") : formatBytes(item.size_bytes)} · {item.modified}</Text>
+                  </View>
+                </Pressable>
+                <View style={styles.rowActions}>
+                  <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => openRename(item)} style={styles.rowButton}>
+                    <Text style={styles.rowButtonText}>{t("rename")}</Text>
+                  </Pressable>
+                  <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => remove(item)} style={styles.rowButton}>
+                    <Text style={styles.deleteText}>{t("delete")}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+            ListEmptyComponent={<View style={styles.empty}><Text style={styles.emptyText}>{t("noFiles")}</Text></View>}
+          />
+        )}
+        <Modal animationType="fade" onRequestClose={() => setPrompt(null)} transparent visible={prompt !== null}>
+          <View style={styles.promptBackdrop}>
+            <View style={styles.promptCard}>
+              <Text style={styles.promptTitle}>{prompt?.mode === "rename" ? t("renameFileTitle") : t("createFolderTitle")}</Text>
+              <Text style={styles.promptLabel}>{t("entryName")}</Text>
+              <TextInput
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={(value) => setPrompt((current) => current ? { ...current, value } : current)}
+                placeholder={t("entryName")}
+                placeholderTextColor="#8c96a5"
+                style={styles.promptInput}
+                value={prompt?.value ?? ""}
+              />
+              {error ? <Text style={styles.error}>{error}</Text> : null}
+              <View style={styles.promptActions}>
+                <Pressable accessibilityRole="button" onPress={() => setPrompt(null)} style={styles.promptCancel}>
+                  <Text style={styles.promptCancelText}>{t("cancel")}</Text>
+                </Pressable>
+                <Pressable accessibilityRole="button" disabled={mutationBusy} onPress={() => void submitPrompt()} style={[styles.promptSubmit, mutationBusy && styles.disabled]}>
+                  {mutationBusy ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.promptSubmitText}>{t("submit")}</Text>}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
+  header: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", paddingBottom: 14, paddingHorizontal: 12 },
+  headerButton: { minWidth: 64, paddingHorizontal: 7, paddingVertical: 8 },
+  headerButtonText: { color: "#2368c4", fontSize: 13, fontWeight: "700" },
+  headerCopy: { flex: 1, minWidth: 0 },
+  title: { color: "#152033", fontSize: 21, fontWeight: "800", textAlign: "center" },
+  subtitle: { color: "#778395", fontSize: 11, marginTop: 3, textAlign: "center" },
+  toolbar: { alignItems: "center", backgroundColor: "#ffffff", borderBottomColor: "#e0e5eb", borderBottomWidth: 1, flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
+  pathCopy: { flex: 1, minWidth: 0 },
+  pathLabel: { color: "#778395", fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
+  path: { color: "#3f4b5d", fontSize: 13, marginTop: 2 },
+  toolbarButton: { borderColor: "#b8cdea", borderRadius: 8, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 8 },
+  toolbarText: { color: "#2368c4", fontSize: 12, fontWeight: "700" },
+  error: { color: "#bd2d3b", fontSize: 13, lineHeight: 18, paddingHorizontal: 14, paddingTop: 10 },
+  warning: { color: "#bd7621", fontSize: 12, paddingHorizontal: 14, paddingTop: 8 },
+  list: { padding: 12 },
+  emptyList: { flexGrow: 1, justifyContent: "center", padding: 24 },
+  row: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#dce2e9", borderRadius: 11, borderWidth: 1, flexDirection: "row", marginBottom: 8, padding: 11 },
+  rowMain: { alignItems: "center", flex: 1, flexDirection: "row", minWidth: 0 },
+  icon: { color: "#2368c4", fontSize: 19, marginRight: 10, width: 22 },
+  rowCopy: { flex: 1, minWidth: 0 },
+  name: { color: "#152033", fontSize: 14, fontWeight: "700" },
+  meta: { color: "#778395", fontSize: 11, marginTop: 3 },
+  rowActions: { alignItems: "center", flexDirection: "row", gap: 5, marginLeft: 6 },
+  rowButton: { paddingHorizontal: 4, paddingVertical: 7 },
+  rowButtonText: { color: "#2368c4", fontSize: 11, fontWeight: "700" },
+  deleteText: { color: "#bd2d3b", fontSize: 11, fontWeight: "700" },
+  loading: { alignItems: "center", flex: 1, justifyContent: "center" },
+  loadingText: { color: "#778395", fontSize: 13, marginTop: 10 },
+  empty: { alignItems: "center" },
+  emptyText: { color: "#778395", fontSize: 14 },
+  promptBackdrop: { alignItems: "center", backgroundColor: "rgba(15,24,34,0.45)", flex: 1, justifyContent: "center", padding: 24 },
+  promptCard: { backgroundColor: "#ffffff", borderRadius: 14, maxWidth: 440, padding: 18, width: "100%" },
+  promptTitle: { color: "#152033", fontSize: 18, fontWeight: "800", marginBottom: 16 },
+  promptLabel: { color: "#425064", fontSize: 13, fontWeight: "700", marginBottom: 7 },
+  promptInput: { backgroundColor: "#f7f9fb", borderColor: "#d9e0e8", borderRadius: 9, borderWidth: 1, color: "#152033", fontSize: 16, paddingHorizontal: 12, paddingVertical: 11 },
+  promptActions: { flexDirection: "row", gap: 9, justifyContent: "flex-end", marginTop: 16 },
+  promptCancel: { borderColor: "#d9e0e8", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 42, paddingHorizontal: 14 },
+  promptCancelText: { color: "#536273", fontSize: 13, fontWeight: "700" },
+  promptSubmit: { alignItems: "center", backgroundColor: "#2368c4", borderRadius: 9, justifyContent: "center", minHeight: 42, minWidth: 78, paddingHorizontal: 14 },
+  promptSubmitText: { color: "#ffffff", fontSize: 13, fontWeight: "700" },
+  disabled: { opacity: 0.5 },
+});

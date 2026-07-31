@@ -11,6 +11,7 @@ import type {
   DeviceDetails,
   CompanionDevice,
   HomeScreenLayout,
+  DeviceFileList,
   DeviceEvent,
   ForgetDeviceResult,
   LocationStatus,
@@ -42,6 +43,7 @@ export type SocketCallbacks = {
 const REQUEST_TIMEOUT_MS = 8_000;
 const DEVICE_COMMAND_TIMEOUT_MS = 12_000;
 const DEVICE_DETAILS_TIMEOUT_MS = 15_000;
+const DEVICE_FILE_LIST_TIMEOUT_MS = 20_000;
 const PAIRING_REQUEST_TIMEOUT_MS = 100_000;
 const FORGET_REQUEST_TIMEOUT_MS = 50_000;
 const SOCKET_HANDSHAKE_TIMEOUT_MS = 8_000;
@@ -288,6 +290,42 @@ export class DeviceHubClient {
     await this.deviceRequest<void>(deviceId, "/api/device/location", {
       method: "DELETE",
     }, DEVICE_COMMAND_TIMEOUT_MS);
+  }
+
+  async listDeviceFiles(deviceId: string, path = "/") {
+    const query = new URLSearchParams({ path });
+    return this.deviceRequest<DeviceFileList>(
+      deviceId,
+      `/api/device/files?${query.toString()}`,
+      {},
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
+  }
+
+  async renameDeviceFile(deviceId: string, path: string, name: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/files/rename", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path, name }),
+    }, DEVICE_FILE_LIST_TIMEOUT_MS);
+  }
+
+  async createDeviceDirectory(deviceId: string, directory: string, name: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/files/directory", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ directory, name }),
+    }, DEVICE_FILE_LIST_TIMEOUT_MS);
+  }
+
+  async deleteDeviceFile(deviceId: string, path: string) {
+    const query = new URLSearchParams({ path });
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/files?${query.toString()}`,
+      { method: "DELETE" },
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
   }
 
   openDevice(deviceId: string, callbacks: SocketCallbacks = {}) {

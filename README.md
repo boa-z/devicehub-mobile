@@ -16,6 +16,7 @@ This first client layer provides:
 - virtual location controls with explicit apply and clear actions;
 - a device information panel for hardware, storage, battery, and regional metadata;
 - on-demand device screenshots, device renaming, paired-companion metadata, and home-screen layout summaries;
+- an authenticated AFC file browser with directory navigation, refresh, rename, create-directory, and delete actions;
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
@@ -90,5 +91,11 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to devices and does not add Android target-device support: the controlled target set is iPhone and iPad only. Android is a client platform, not a target platform.
 
 The mobile app can launch or stop applications already installed on the target through the authenticated host API. It intentionally does not install, sign, or sideload applications.
+
+The Files action in the control screen is the first mobile AFC surface. It is
+limited to browsing and basic device-side management so it does not expose a
+file picker or transfer action that is unavailable on every client platform.
+Import and export can be added later through native document-provider
+integrations without changing the device-scoped HTTP boundary.
 
 When the control socket drops in the foreground, the client retries with bounded exponential backoff (500 ms to 8 s). Backgrounding the app releases media demand and flushes native sinks instead of keeping a stale stream alive; returning to the foreground forces a fresh authenticated socket. Leaving the control screen cancels retries, flushes the native media sinks, and releases media demand.

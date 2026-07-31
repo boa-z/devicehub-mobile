@@ -181,6 +181,22 @@ export type HomeScreenLayout = {
   truncated: boolean;
 };
 
+export type DeviceFileKind = "file" | "directory" | "other";
+
+export type DeviceFileEntry = {
+  name: string;
+  path: string;
+  kind: DeviceFileKind;
+  size_bytes: number;
+  modified: string;
+};
+
+export type DeviceFileList = {
+  path: string;
+  entries: DeviceFileEntry[];
+  truncated: boolean;
+};
+
 export type ClipboardContentKind = "text" | "image";
 
 /** Metadata-only clipboard notification; payload contents never cross the socket. */

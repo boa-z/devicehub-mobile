@@ -36,6 +36,7 @@ import type {
 } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 import { useI18n } from "../i18n";
+import { DeviceFilesScreen } from "./DeviceFilesScreen";
 
 const NativeVideoView = DeviceHubVideoView as any;
 
@@ -109,6 +110,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [streamMetrics, setStreamMetrics] = useState<StreamMetrics | null>(null);
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [appsOpen, setAppsOpen] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
@@ -685,6 +687,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("apps")}</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setFilesOpen(true)} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>{t("files")}</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("rotateLeft")}</Text>
           </Pressable>
@@ -1049,6 +1054,12 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </View>
         </View>
       </Modal>
+      <DeviceFilesScreen
+        client={client}
+        device={device}
+        onClose={() => setFilesOpen(false)}
+        visible={filesOpen}
+      />
     </View>
   );
 }
