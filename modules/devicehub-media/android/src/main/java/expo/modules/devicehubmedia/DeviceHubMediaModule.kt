@@ -23,7 +23,9 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
     Thread(runnable, "devicehub-video-decoder").apply { isDaemon = true }
   }
   private val pending = AtomicInteger(0)
+  private val streamGeneration = AtomicInteger(0)
   private val maxPending = 3
+  @Volatile
   private var surface: Surface? = null
   private var codec: MediaCodec? = null
   private var codecWidth = 0
@@ -42,6 +44,7 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
 
       override fun surfaceDestroyed(holder: SurfaceHolder) {
         surface = null
+        streamGeneration.incrementAndGet()
         executor.execute { releaseCodec() }
       }
     })
@@ -54,10 +57,12 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
       if (current >= maxPending && !keyframe) return
       if (pending.compareAndSet(current, current + 1)) break
     }
+    val generation = streamGeneration.get()
     // Expo may reuse the bridge buffer after this function returns.
     val packet = data.copyOf()
     executor.execute {
       try {
+        if (generation != streamGeneration.get()) return@execute
         val target = surface ?: return@execute
         ensureCodec(target, width, height)
         val decoder = codec ?: return@execute
@@ -79,7 +84,7 @@ class DeviceHubVideoView(context: Context, appContext: AppContext) : ExpoView(co
   }
 
   fun reset() {
-    pending.set(0)
+    streamGeneration.incrementAndGet()
     executor.execute { releaseCodec() }
   }
 
@@ -121,6 +126,7 @@ private class DeviceHubAudioPlayer {
     Thread(runnable, "devicehub-audio-player").apply { isDaemon = true }
   }
   private val pending = AtomicInteger(0)
+  private val streamGeneration = AtomicInteger(0)
   private var track: AudioTrack? = null
   private var sampleRate = 0
   private var channels = 0
@@ -131,9 +137,11 @@ private class DeviceHubAudioPlayer {
       pending.decrementAndGet()
       return
     }
+    val generation = streamGeneration.get()
     val packet = data.copyOf()
     executor.execute {
       try {
+        if (generation != streamGeneration.get()) return@execute
         ensureTrack(nextSampleRate, nextChannels, packet.size)
         track?.write(packet, 0, packet.size, AudioTrack.WRITE_BLOCKING)
       } finally {
@@ -143,7 +151,7 @@ private class DeviceHubAudioPlayer {
   }
 
   fun reset() {
-    pending.set(0)
+    streamGeneration.incrementAndGet()
     executor.execute { releaseTrack() }
   }
 
