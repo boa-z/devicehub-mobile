@@ -57,6 +57,8 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
   const nativeVideoRef = useRef<unknown>(null);
+  const lastVideoInfoAt = useRef(0);
+  const lastAudioInfoAt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
 
@@ -73,6 +75,8 @@ export function ControlScreen({ socket, device, onBack }: Props) {
     };
     const onOpen = () => {
       setConnected(true);
+      lastVideoInfoAt.current = 0;
+      lastAudioInfoAt.current = 0;
       reconnectAttempt.current = 0;
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
@@ -88,7 +92,11 @@ export function ControlScreen({ socket, device, onBack }: Props) {
     const onLease = (granted: boolean) => setControlGranted(granted);
     const onMedia = (packet: import("../protocol/types").MediaPacket) => {
       if (isVideoPacket(packet)) {
-        setVideoInfo(`${packet.width} x ${packet.height} · ${packet.keyframe ? "keyframe" : "frame"}`);
+        const now = Date.now();
+        if (now - lastVideoInfoAt.current >= 250 || lastVideoInfoAt.current === 0) {
+          lastVideoInfoAt.current = now;
+          setVideoInfo(`${packet.width} x ${packet.height} · ${packet.keyframe ? "keyframe" : "frame"}`);
+        }
         const view = nativeVideoRef.current;
         if (DeviceHubMedia && view) {
           DeviceHubMedia.pushVideoFrame(
@@ -101,7 +109,11 @@ export function ControlScreen({ socket, device, onBack }: Props) {
           );
         }
       } else if (isAudioPacket(packet)) {
-        setAudioInfo(`${packet.sampleRate} Hz · ${packet.channels} ch`);
+        const now = Date.now();
+        if (now - lastAudioInfoAt.current >= 1_000 || lastAudioInfoAt.current === 0) {
+          lastAudioInfoAt.current = now;
+          setAudioInfo(`${packet.sampleRate} Hz · ${packet.channels} ch`);
+        }
         DeviceHubMedia?.pushAudioPcm(packet.data, packet.sampleRate, packet.channels);
       }
     };
