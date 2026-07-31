@@ -8,6 +8,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { DeviceHubSocket } from "../protocol/client";
+import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
 import type { Device, MultiTouchContact } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
@@ -32,22 +33,40 @@ function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
 }
 
-function contactsFromEvent(event: GestureResponderEvent, width: number, height: number): MultiTouchContact[] {
-  return event.nativeEvent.touches.map((touch) => ({
-    identity: Math.abs(Number(touch.identifier)) % 255,
-    touching: true,
-    x: clamp(touch.locationX / Math.max(width, 1)),
-    y: clamp(touch.locationY / Math.max(height, 1)),
-  }));
+function contactsFromEvent(
+  event: GestureResponderEvent,
+  width: number,
+  height: number,
+  identities: TouchIdentityAllocator,
+): MultiTouchContact[] {
+  return event.nativeEvent.touches.flatMap((touch) => {
+    const identity = identities.identityFor(touch.identifier);
+    if (identity === null) return [];
+    return [{
+      identity,
+      touching: true,
+      x: clamp(touch.locationX / Math.max(width, 1)),
+      y: clamp(touch.locationY / Math.max(height, 1)),
+    }];
+  });
 }
 
-function changedContact(event: GestureResponderEvent, width: number, height: number): MultiTouchContact[] {
-  return event.nativeEvent.changedTouches.map((touch) => ({
-    identity: Math.abs(Number(touch.identifier)) % 255,
-    touching: false,
-    x: clamp(touch.locationX / Math.max(width, 1)),
-    y: clamp(touch.locationY / Math.max(height, 1)),
-  }));
+function changedContact(
+  event: GestureResponderEvent,
+  width: number,
+  height: number,
+  identities: TouchIdentityAllocator,
+): MultiTouchContact[] {
+  return event.nativeEvent.changedTouches.flatMap((touch) => {
+    const identity = identities.identityFor(touch.identifier);
+    if (identity === null) return [];
+    return [{
+      identity,
+      touching: false,
+      x: clamp(touch.locationX / Math.max(width, 1)),
+      y: clamp(touch.locationY / Math.max(height, 1)),
+    }];
+  });
 }
 
 export function ControlScreen({ socket, device, onBack }: Props) {
@@ -57,6 +76,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
   const nativeVideoRef = useRef<unknown>(null);
+  const touchIdentities = useRef(new TouchIdentityAllocator());
   const lastVideoInfoAt = useRef(0);
   const lastAudioInfoAt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -147,13 +167,16 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   };
 
   const sendTouches = (event: GestureResponderEvent) => {
-    const contacts = contactsFromEvent(event, surface.width, surface.height);
+    const contacts = contactsFromEvent(event, surface.width, surface.height, touchIdentities.current);
     socket.send({ type: "multi_touch", contacts });
   };
 
   const endTouches = (event: GestureResponderEvent) => {
-    const ended = changedContact(event, surface.width, surface.height);
-    const remaining = contactsFromEvent(event, surface.width, surface.height);
+    const ended = changedContact(event, surface.width, surface.height, touchIdentities.current);
+    const remaining = contactsFromEvent(event, surface.width, surface.height, touchIdentities.current);
+    for (const touch of event.nativeEvent.changedTouches) {
+      touchIdentities.current.release(touch.identifier);
+    }
     socket.send({ type: "multi_touch", contacts: [...remaining, ...ended] });
   };
 
