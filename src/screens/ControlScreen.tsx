@@ -84,6 +84,10 @@ export function ControlScreen({ socket, device, onBack }: Props) {
 
   useEffect(() => {
     let disposed = false;
+    const resetNativeMedia = () => {
+      if (nativeVideoRef.current) DeviceHubMedia?.resetVideo(nativeVideoRef.current);
+      DeviceHubMedia?.reset();
+    };
     const scheduleReconnect = () => {
       if (disposed || reconnectTimer.current) return;
       const delay = Math.min(8_000, 500 * 2 ** reconnectAttempt.current);
@@ -106,6 +110,8 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       socket.send({ type: "audio_demand", active: true });
     };
     const onClose = () => {
+      if (disposed) return;
+      resetNativeMedia();
       setConnected(false);
       scheduleReconnect();
     };
@@ -156,8 +162,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       unsubscribe();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
-      if (nativeVideoRef.current) DeviceHubMedia?.resetVideo(nativeVideoRef.current);
-      DeviceHubMedia?.reset();
+      resetNativeMedia();
       socket.close();
     };
   }, [socket]);
