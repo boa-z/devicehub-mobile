@@ -26,6 +26,7 @@ export type SocketCallbacks = {
 };
 
 const REQUEST_TIMEOUT_MS = 8_000;
+const SOCKET_HANDSHAKE_TIMEOUT_MS = 8_000;
 const MOBILE_PROTOCOL_VERSION = 1;
 
 export class DeviceHubHttpError extends Error {
@@ -42,6 +43,15 @@ export class DeviceHubRequestTimeoutError extends Error {
   constructor(path: string) {
     super(`DeviceHub request timed out after ${REQUEST_TIMEOUT_MS / 1_000} seconds: ${path}`);
     this.name = "DeviceHubRequestTimeoutError";
+  }
+}
+
+export class DeviceHubSocketHandshakeTimeoutError extends Error {
+  constructor(deviceId: string) {
+    super(
+      `DeviceHub WebSocket handshake timed out after ${SOCKET_HANDSHAKE_TIMEOUT_MS / 1_000} seconds: ${deviceId}`,
+    );
+    this.name = "DeviceHubSocketHandshakeTimeoutError";
   }
 }
 
@@ -191,6 +201,8 @@ export class DeviceHubSocket {
   private readonly deviceId: string;
   private readonly platform: MobilePlatform;
   private negotiatedHello: ServerHello | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  private handshakeComplete = false;
 
   constructor(
     connection: DeviceHubConnection,
@@ -206,12 +218,22 @@ export class DeviceHubSocket {
   }
 
   private open() {
+    this.clearHandshakeTimer();
+    this.handshakeComplete = false;
     const query = new URLSearchParams({ device_id: this.deviceId });
     const socket = new WebSocket(
       `${websocketOrigin(this.connection.origin)}/api/ws?${query.toString()}`,
       ["devicehub-mask", this.connection.token],
     );
     this.socket = socket;
+    this.handshakeTimer = setTimeout(() => {
+      if (this.socket !== socket || this.closed || this.handshakeComplete) return;
+      this.clearHandshakeTimer();
+      this.dispatch((listener) =>
+        listener.onError?.(new DeviceHubSocketHandshakeTimeoutError(this.deviceId)),
+      );
+      socket.close();
+    }, SOCKET_HANDSHAKE_TIMEOUT_MS);
     socket.binaryType = "arraybuffer";
     socket.onopen = () => {
       if (this.socket !== socket || this.closed) return;
@@ -230,6 +252,8 @@ export class DeviceHubSocket {
     };
     socket.onclose = (event) => {
       if (this.socket !== socket) return;
+      this.clearHandshakeTimer();
+      this.handshakeComplete = false;
       this.socket = null;
       this.leaseGranted = false;
       this.dispatch((listener) => listener.onClose?.(event));
@@ -263,11 +287,13 @@ export class DeviceHubSocket {
     if (this.socket && !force) return false;
     if (force && this.socket) {
       const previous = this.socket;
+      this.clearHandshakeTimer();
       this.socket = null;
       previous.close();
     }
     this.leaseGranted = false;
     this.negotiatedHello = null;
+    this.handshakeComplete = false;
     this.open();
     return true;
   }
@@ -275,6 +301,8 @@ export class DeviceHubSocket {
   close() {
     if (this.closed) return;
     this.closed = true;
+    this.clearHandshakeTimer();
+    this.handshakeComplete = false;
     this.socket?.close();
     this.socket = null;
   }
@@ -289,6 +317,8 @@ export class DeviceHubSocket {
         if (message.type === "server_hello") {
           protocolError = true;
           const hello = parseServerHello(message.payload);
+          this.handshakeComplete = true;
+          this.clearHandshakeTimer();
           this.negotiatedHello = hello;
           this.dispatch((listener) => listener.onServerHello?.(hello));
         }
@@ -313,9 +343,18 @@ export class DeviceHubSocket {
       const packet = parseMediaPacket(buffer);
       if (packet) this.dispatch((listener) => listener.onMedia?.(packet));
     } catch (error) {
-      if (protocolError) source.close();
+      if (protocolError) {
+        this.clearHandshakeTimer();
+        source.close();
+      }
       this.dispatch((listener) => listener.onError?.(error));
     }
+  }
+
+  private clearHandshakeTimer() {
+    if (this.handshakeTimer === null) return;
+    clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   private dispatch(callback: (listener: SocketCallbacks) => void) {
