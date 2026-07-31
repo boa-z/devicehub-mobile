@@ -43,7 +43,7 @@ jobs:
         run: npx expo prebuild --platform ios --no-install
 
       - name: Install CocoaPods dependencies
-        run: npx pod-install ios
+        run: npm run ios:pods
 
       - name: Build unsigned iOS archive
         env:

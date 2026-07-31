@@ -24,7 +24,8 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "ios": "expo run:ios",
+    "ios": "EXPO_USE_PRECOMPILED_MODULES=0 RCT_USE_PREBUILT_RNCORE=0 RCT_USE_RN_DEP=0 expo run:ios",
+    "ios:pods": "EXPO_USE_PRECOMPILED_MODULES=0 RCT_USE_PREBUILT_RNCORE=0 RCT_USE_RN_DEP=0 npx pod-install ios",
     "web": "expo start --web"
   },
   "private": true

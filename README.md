@@ -36,9 +36,16 @@ This project uses Expo SDK 57. Native media requires an Expo development build; 
 npm install
 npx tsc --noEmit
 npx expo prebuild --platform ios
-npx pod-install ios
+npm run ios:pods
 npm run ios
 ```
+
+`npm run ios:pods` intentionally builds the React Native and Expo native
+dependencies from source. With the current Expo SDK/Xcode toolchain, the
+default precompiled React Native Core can be ABI-incompatible with generated
+React Codegen and fail at the final link step. Use this command after every
+iOS prebuild; the same configuration is used by CI and the unsigned nightly
+IPA workflow.
 
 The app version is read from `package.json`. Native build numbers are generated
 by `app.config.js`: local builds use `1`, `DEVICEHUB_MOBILE_BUILD_NUMBER` takes
