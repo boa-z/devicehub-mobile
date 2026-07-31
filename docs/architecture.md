@@ -65,6 +65,13 @@ The first mobile implementation intentionally omits import/export until the
 iOS document picker and Android document provider can share one transfer
 contract; this keeps the available actions honest on both client platforms.
 
+Performance and device logs use separate, demand-gated HTTP controls. The
+mobile workbench polls performance snapshots and process inventory at a bounded
+interval, then polls logs by sequence cursor so old entries are not duplicated.
+It records ownership of any sampling or log demand started by that panel and
+releases only those demands during cleanup; an already-running demand owned by
+another browser or desktop client is left untouched.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device

@@ -38,6 +38,7 @@ import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../i18n";
 import { DeviceFilesScreen } from "./DeviceFilesScreen";
+import { PerformanceScreen } from "./PerformanceScreen";
 
 const NativeVideoView = DeviceHubVideoView as any;
 
@@ -113,6 +114,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [appsOpen, setAppsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
@@ -692,6 +694,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setFilesOpen(true)} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("files")}</Text>
           </Pressable>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setPerformanceOpen(true)} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>{t("performance")}</Text>
+          </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("rotateLeft")}</Text>
           </Pressable>
@@ -1061,6 +1066,12 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         device={device}
         onClose={() => setFilesOpen(false)}
         visible={filesOpen}
+      />
+      <PerformanceScreen
+        client={client}
+        device={device}
+        onClose={() => setPerformanceOpen(false)}
+        visible={performanceOpen}
       />
     </View>
   );

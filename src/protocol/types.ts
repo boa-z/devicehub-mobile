@@ -235,6 +235,116 @@ export type StreamMetrics = {
   megabits_per_second: number;
 };
 
+export type ProcessPerformance = {
+  pid: number;
+  name: string;
+  cpu_percent: number | null;
+  memory_bytes: number | null;
+};
+
+export type ProcessEnergy = {
+  pid: number;
+  name: string;
+  total_score: number;
+  cpu_score: number;
+  gpu_score: number;
+  networking_score: number;
+  display_score: number;
+  location_score: number;
+  app_state_score: number;
+};
+
+export type DeviceNetworkInterface = {
+  name: string;
+  kind: "wifi" | "cellular" | "ethernet" | "loopback" | "other";
+  description: string;
+};
+
+export type PerformanceSnapshot = {
+  captured_at_ms: number;
+  system_cpu_percent: number | null;
+  process_count: number | null;
+  logical_cpu_count: number | null;
+  physical_cpu_count: number | null;
+  physical_memory_bytes: number | null;
+  top_processes: ProcessPerformance[];
+  energy_processes: ProcessEnergy[];
+  graphics_fps: number | null;
+  gpu_allocated_bytes: number | null;
+  gpu_in_use_bytes: number | null;
+  gpu_driver_bytes: number | null;
+  gpu_recovery_count: number | null;
+  network_rx_bytes_per_second: number | null;
+  network_tx_bytes_per_second: number | null;
+  network_recent_connections: number | null;
+  network_interfaces: DeviceNetworkInterface[];
+  network_interfaces_available: boolean;
+  network_interfaces_truncated: boolean;
+};
+
+export type AppActivityEvent = {
+  sequence: number;
+  received_at_ms: number;
+  notification_type: string;
+  app_name: string | null;
+  exec_name: string | null;
+  pid: number | null;
+  state_description: string | null;
+};
+
+export type ServiceHealth = {
+  name: string;
+  phase: "connecting" | "ready" | "recovering" | "unavailable" | "stopped";
+  attempts: number;
+  restarts: number;
+  last_error: string | null;
+  updated_at_ms: number;
+};
+
+export type DevicePerformanceView = {
+  sample: PerformanceSnapshot;
+  app_activity: AppActivityEvent[];
+  services: ServiceHealth[];
+  sampling: boolean;
+};
+
+export type RunningProcess = {
+  pid: number;
+  name: string;
+  app_name: string | null;
+  is_application: boolean;
+};
+
+export type RunningProcessList = {
+  processes: RunningProcess[];
+  truncated: boolean;
+};
+
+export type DeviceLogLevel = "notice" | "info" | "debug" | "error" | "fault";
+
+export type DeviceLogEntry = {
+  sequence: number;
+  received_at_ms: number;
+  message: string;
+  level: DeviceLogLevel | null;
+  process: string | null;
+  pid: number | null;
+  subsystem: string | null;
+  category: string | null;
+  filename: string | null;
+};
+
+export type DeviceLogBatch = {
+  entries: DeviceLogEntry[];
+  oldest_sequence: number | null;
+  latest_sequence: number | null;
+  cursor_lagged: boolean;
+  has_more: boolean;
+  streaming: boolean;
+  source: "unified" | "syslog" | null;
+  service: ServiceHealth | null;
+};
+
 export type LocationStatus = {
   available: boolean;
   active: boolean;

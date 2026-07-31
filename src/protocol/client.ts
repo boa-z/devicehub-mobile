@@ -17,6 +17,9 @@ import type {
   LocationStatus,
   PairDeviceResult,
   StreamMetrics,
+  DevicePerformanceView,
+  RunningProcessList,
+  DeviceLogBatch,
 } from "./types";
 import { APP_VERSION, APP_BUILD } from "../runtime/version";
 
@@ -260,6 +263,50 @@ export class DeviceHubClient {
 
   async homeScreenLayout(deviceId: string) {
     return this.deviceRequest<HomeScreenLayout>(deviceId, "/api/device/home-screen", {}, DEVICE_DETAILS_TIMEOUT_MS);
+  }
+
+  async performance(deviceId: string) {
+    return this.deviceRequest<DevicePerformanceView>(deviceId, "/api/performance", {}, DEVICE_DETAILS_TIMEOUT_MS);
+  }
+
+  async startPerformanceSampling(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/performance/sampling", { method: "PUT" });
+  }
+
+  async stopPerformanceSampling(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/performance/sampling", { method: "DELETE" });
+  }
+
+  async runningProcesses(deviceId: string) {
+    return this.deviceRequest<RunningProcessList>(
+      deviceId,
+      "/api/performance/processes",
+      {},
+      DEVICE_DETAILS_TIMEOUT_MS,
+    );
+  }
+
+  async deviceLogs(deviceId: string, after?: number, limit = 100) {
+    const query = new URLSearchParams({ limit: String(Math.max(1, Math.min(500, Math.floor(limit)))) });
+    if (after !== undefined) query.set("after", String(after));
+    return this.deviceRequest<DeviceLogBatch>(
+      deviceId,
+      `/api/device/logs?${query.toString()}`,
+      {},
+      DEVICE_DETAILS_TIMEOUT_MS,
+    );
+  }
+
+  async startDeviceLogs(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/logs/streaming", { method: "PUT" });
+  }
+
+  async stopDeviceLogs(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/logs/streaming", { method: "DELETE" });
+  }
+
+  async clearDeviceLogs(deviceId: string) {
+    await this.deviceRequest<void>(deviceId, "/api/device/logs", { method: "DELETE" });
   }
 
   async renameDevice(deviceId: string, name: string) {

@@ -17,6 +17,7 @@ This first client layer provides:
 - a device information panel for hardware, storage, battery, and regional metadata;
 - on-demand device screenshots, device renaming, paired-companion metadata, and home-screen layout summaries;
 - an authenticated AFC file browser with directory navigation, refresh, rename, create-directory, and delete actions;
+- a device performance and log workbench with explicit sampling/log-stream controls, process and service-health views, and bounded incremental log polling;
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
@@ -97,5 +98,10 @@ limited to browsing and basic device-side management so it does not expose a
 file picker or transfer action that is unavailable on every client platform.
 Import and export can be added later through native document-provider
 integrations without changing the device-scoped HTTP boundary.
+
+The Performance action reads the existing device-scoped performance and log
+routes. Sampling and log streaming are opt-in, and a panel only stops a demand
+that it started itself; closing the panel does not interrupt another client
+viewing the same device.
 
 When the control socket drops in the foreground, the client retries with bounded exponential backoff (500 ms to 8 s). Backgrounding the app releases media demand and flushes native sinks instead of keeping a stale stream alive; returning to the foreground forces a fresh authenticated socket. Leaving the control screen cancels retries, flushes the native media sinks, and releases media demand.
