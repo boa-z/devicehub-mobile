@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -10,6 +10,9 @@ import {
 import { DeviceHubSocket } from "../protocol/client";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
 import type { Device, MultiTouchContact } from "../protocol/types";
+import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
+
+const NativeVideoView = DeviceHubVideoView as any;
 
 type Props = {
   socket: DeviceHubSocket;
@@ -53,6 +56,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
+  const nativeVideoRef = useRef<unknown>(null);
 
   useEffect(() => {
     const onOpen = () => {
@@ -65,8 +69,13 @@ export function ControlScreen({ socket, device, onBack }: Props) {
     const onMedia = (packet: import("../protocol/types").MediaPacket) => {
       if (isVideoPacket(packet)) {
         setVideoInfo(`${packet.width} x ${packet.height} · ${packet.keyframe ? "keyframe" : "frame"}`);
+        const view = nativeVideoRef.current;
+        if (DeviceHubMedia && view) {
+          DeviceHubMedia.pushVideoFrame(view, packet.data, Number(packet.timestamp) * 1_000, packet.keyframe);
+        }
       } else if (isAudioPacket(packet)) {
         setAudioInfo(`${packet.sampleRate} Hz · ${packet.channels} ch`);
+        DeviceHubMedia?.pushAudioPcm(packet.data, packet.sampleRate, packet.channels);
       }
     };
     const unsubscribe = socket.subscribe({
@@ -85,6 +94,7 @@ export function ControlScreen({ socket, device, onBack }: Props) {
       unsubscribe();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
+      DeviceHubMedia?.reset();
       socket.close();
     };
   }, [socket]);
@@ -128,8 +138,18 @@ export function ControlScreen({ socket, device, onBack }: Props) {
             onTouchCancel={endTouches}
             style={styles.touchSurface}
           >
-            <Text style={styles.videoTitle}>iPhone screen</Text>
-            <Text style={styles.videoDescription}>Native HEVC renderer will display the live image here.</Text>
+            {NativeVideoView ? (
+              <NativeVideoView
+                contentMode="fit"
+                ref={nativeVideoRef}
+                style={styles.nativeVideo}
+              />
+            ) : (
+              <>
+                <Text style={styles.videoTitle}>iPhone screen</Text>
+                <Text style={styles.videoDescription}>Install the DeviceHub development build to enable native HEVC rendering.</Text>
+              </>
+            )}
             <Text style={styles.videoTelemetry}>{videoInfo}</Text>
             <Text style={styles.videoTelemetry}>{audioInfo}</Text>
           </View>
@@ -175,6 +195,7 @@ const styles = StyleSheet.create({
   content: { flex: 1, padding: 16 },
   videoFrame: { alignSelf: "center", backgroundColor: "#080d12", borderColor: "#2b3a4b", borderRadius: 16, borderWidth: 1, flex: 1, maxHeight: 720, maxWidth: 520, overflow: "hidden", width: "100%" },
   touchSurface: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },
+  nativeVideo: StyleSheet.absoluteFill,
   videoTitle: { color: "#f1f5fa", fontSize: 20, fontWeight: "700" },
   videoDescription: { color: "#8796a8", fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 280, textAlign: "center" },
   videoTelemetry: { color: "#6f8195", fontSize: 11, marginTop: 12 },

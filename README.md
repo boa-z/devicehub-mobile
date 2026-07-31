@@ -11,16 +11,18 @@ This first client layer provides:
 - a device control screen with multi-touch, Home, lock, volume, mute, and rotation commands;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
 
-The screen intentionally does not claim to decode video or play audio yet. Native iOS VideoToolbox and AVAudioEngine adapters are the next implementation stage. The Android app will use the same protocol layer and later provide MediaCodec/AudioTrack adapters.
+The iOS development build includes a native media module boundary: `AVSampleBufferDisplayLayer` receives HEVC access units and `AVAudioEngine` receives PCM. The Android module is currently a no-op adapter so the Android client remains usable for connection and control while its MediaCodec/AudioTrack implementation is developed.
 
 ## Development
 
-This project uses Expo SDK 57 and must be run with an Expo development build when native media modules are added. Expo Go is sufficient only for the current protocol and UI skeleton.
+This project uses Expo SDK 57. Native media requires an Expo development build; Expo Go deliberately shows a clear fallback instead of pretending to decode the stream.
 
 ```sh
 npm install
 npx tsc --noEmit
-npx expo start
+npx expo prebuild --platform ios
+npx pod-install ios
+npm run ios
 ```
 
 Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
