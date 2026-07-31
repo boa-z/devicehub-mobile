@@ -7,10 +7,13 @@ import type {
   ServerHello,
   DeviceApp,
   AppConsoleSnapshot,
+  ClipboardEvent,
   DeviceDetails,
+  DeviceEvent,
   ForgetDeviceResult,
   LocationStatus,
   PairDeviceResult,
+  StreamMetrics,
 } from "./types";
 
 export type DeviceHubConnection = {
@@ -28,6 +31,9 @@ export type SocketCallbacks = {
   onMedia?: (packet: MediaPacket) => void;
   onControlLease?: (granted: boolean) => void;
   onServerHello?: (hello: ServerHello) => void;
+  onClipboard?: (event: ClipboardEvent) => void;
+  onDeviceEvent?: (event: DeviceEvent) => void;
+  onStreamMetrics?: (metrics: StreamMetrics) => void;
 };
 
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -442,6 +448,18 @@ export class DeviceHubSocket {
             this.dispatch((listener) => listener.onControlLease?.(granted));
           }
         }
+        if (message.type === "clipboard") {
+          const event = parseClipboardEvent(message.payload);
+          this.dispatch((listener) => listener.onClipboard?.(event));
+        }
+        if (message.type === "device_event") {
+          const event = parseDeviceEvent(message.payload);
+          this.dispatch((listener) => listener.onDeviceEvent?.(event));
+        }
+        if (message.type === "metrics" || message.type === "stream_metrics") {
+          const metrics = parseStreamMetrics(message.payload);
+          this.dispatch((listener) => listener.onStreamMetrics?.(metrics));
+        }
         return;
       }
       const buffer = data instanceof ArrayBuffer
@@ -496,4 +514,91 @@ function parseServerHello(payload: unknown): ServerHello {
     throw new Error("DeviceHub server does not advertise the PCM audio stream");
   }
   return value as ServerHello;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("DeviceHub server returned an invalid event payload");
+  }
+  return value as Record<string, unknown>;
+}
+
+function parseClipboardEvent(payload: unknown): ClipboardEvent {
+  const value = asRecord(payload);
+  if (
+    typeof value.from_device !== "boolean" ||
+    (value.kind !== "text" && value.kind !== "image") ||
+    typeof value.preview !== "string"
+  ) {
+    throw new Error("DeviceHub server returned an invalid clipboard event");
+  }
+  return {
+    from_device: value.from_device,
+    kind: value.kind,
+    preview: value.preview,
+  };
+}
+
+function parseDeviceEvent(payload: unknown): DeviceEvent {
+  const value = asRecord(payload);
+  const kinds: DeviceEvent["kind"][] = [
+    "app_installed",
+    "app_uninstalled",
+    "activation_state_changed",
+    "disk_usage_changed",
+    "device_name_changed",
+    "regional_settings_changed",
+    "developer_image_mounted",
+    "lock_state_changed",
+  ];
+  if (
+    typeof value.sequence !== "number" ||
+    !Number.isSafeInteger(value.sequence) ||
+    value.sequence < 0 ||
+    typeof value.kind !== "string" ||
+    !kinds.includes(value.kind as DeviceEvent["kind"])
+  ) {
+    throw new Error("DeviceHub server returned an invalid device event");
+  }
+  return {
+    sequence: value.sequence,
+    kind: value.kind as DeviceEvent["kind"],
+  };
+}
+
+function parseStreamMetrics(payload: unknown): StreamMetrics {
+  const value = asRecord(payload);
+  if (typeof value.transport_active !== "boolean") {
+    throw new Error("DeviceHub server returned invalid stream metrics");
+  }
+  const numericFields: Array<keyof Omit<StreamMetrics, "transport_active">> = [
+    "source_fps",
+    "decoded_fps",
+    "published_fps",
+    "sent_fps",
+    "backend_dropped_fps",
+    "frame_age_ms",
+    "websocket_send_ms",
+    "decoder_accept_ms",
+    "presentation_ack_ms",
+    "megabits_per_second",
+  ];
+  for (const field of numericFields) {
+    if (typeof value[field] !== "number" || !Number.isFinite(value[field])) {
+      throw new Error("DeviceHub server returned invalid stream metrics");
+    }
+  }
+  return {
+    transport_active: value.transport_active,
+    source_fps: value.source_fps as number,
+    decoded_fps: value.decoded_fps as number,
+    published_fps: value.published_fps as number,
+    sent_fps: value.sent_fps as number,
+    backend_dropped_fps: value.backend_dropped_fps as number,
+    frame_age_ms: value.frame_age_ms as number,
+    websocket_send_ms: value.websocket_send_ms as number,
+    decoder_accept_ms: value.decoder_accept_ms as number,
+    presentation_ack_ms: value.presentation_ack_ms as number,
+    megabits_per_second: value.megabits_per_second as number,
+  };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
   ActivityIndicator,
@@ -20,7 +20,18 @@ import {
 import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
-import type { AppConsoleLine, AppConsoleSnapshot, Device, DeviceApp, DeviceDetails, LocationStatus, MultiTouchContact } from "../protocol/types";
+import type {
+  AppConsoleLine,
+  AppConsoleSnapshot,
+  ClipboardEvent,
+  Device,
+  DeviceApp,
+  DeviceDetails,
+  DeviceEvent,
+  LocationStatus,
+  MultiTouchContact,
+  StreamMetrics,
+} from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 
 const NativeVideoView = DeviceHubVideoView as any;
@@ -97,6 +108,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
+  const [streamMetrics, setStreamMetrics] = useState<StreamMetrics | null>(null);
+  const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [appsOpen, setAppsOpen] = useState(false);
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
@@ -134,8 +147,31 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const appState = useRef(AppState.currentState);
   const lastVideoInfoAt = useRef(0);
   const lastAudioInfoAt = useRef(0);
+  const lastMetricsAt = useRef(0);
+  const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttempt = useRef(0);
+
+  const loadApps = useCallback(async () => {
+    setAppsBusy(true);
+    setAppsError(null);
+    try {
+      setApps(await client.listApps(device.id));
+    } catch (error) {
+      setAppsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAppsBusy(false);
+    }
+  }, [client, device.id]);
+
+  const showActivity = (message: string) => {
+    setActivityMessage(message);
+    if (activityTimer.current) clearTimeout(activityTimer.current);
+    activityTimer.current = setTimeout(() => {
+      activityTimer.current = null;
+      setActivityMessage(null);
+    }, 6_000);
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -167,6 +203,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       setConnectionError(null);
       lastVideoInfoAt.current = 0;
       lastAudioInfoAt.current = 0;
+      lastMetricsAt.current = 0;
+      setStreamMetrics(null);
     };
     const onServerHello = () => {
       setConnected(true);
@@ -182,6 +220,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       if (disposed) return;
       resetNativeMedia();
       setConnected(false);
+      setStreamMetrics(null);
       scheduleReconnect();
     };
     const onError = (error: unknown) => {
@@ -189,6 +228,24 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       setConnectionError(error instanceof Error ? error.message : String(error));
     };
     const onLease = (granted: boolean) => setControlGranted(granted);
+    const onClipboard = (event: ClipboardEvent) => {
+      const direction = event.from_device ? "Device" : "Host";
+      const preview = event.preview ? ` · ${event.preview}` : "";
+      showActivity(`${direction} clipboard ${event.kind}${preview}`);
+    };
+    const onDeviceEvent = (event: DeviceEvent) => {
+      const label = event.kind.replace(/_/g, " ");
+      showActivity(`Device event: ${label}`);
+      if (event.kind === "app_installed" || event.kind === "app_uninstalled") {
+        void loadApps();
+      }
+    };
+    const onStreamMetrics = (metrics: StreamMetrics) => {
+      const now = Date.now();
+      if (now - lastMetricsAt.current < 1_000 && lastMetricsAt.current !== 0) return;
+      lastMetricsAt.current = now;
+      setStreamMetrics(metrics);
+    };
     const onMedia = (packet: import("../protocol/types").MediaPacket) => {
       if (isVideoPacket(packet)) {
         const now = Date.now();
@@ -223,6 +280,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       onControlLease: onLease,
       onMedia,
       onServerHello,
+      onClipboard,
+      onDeviceEvent,
+      onStreamMetrics,
     });
     setControlGranted(socket.controlGranted);
     if (socket.serverHello !== null && appState.current === "active") {
@@ -247,6 +307,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       appStateSubscription.remove();
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
       reconnectTimer.current = null;
+      if (activityTimer.current) clearTimeout(activityTimer.current);
+      activityTimer.current = null;
+      setActivityMessage(null);
       unsubscribe();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
@@ -258,7 +321,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       }
       socket.close();
     };
-  }, [socket]);
+  }, [loadApps, socket]);
 
   const onSurfaceLayout = (event: LayoutChangeEvent) => {
     setSurface({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
@@ -276,18 +339,6 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       touchIdentities.current.release(touch.identifier);
     }
     socket.send({ type: "multi_touch", contacts: [...remaining, ...ended] });
-  };
-
-  const loadApps = async () => {
-    setAppsBusy(true);
-    setAppsError(null);
-    try {
-      setApps(await client.listApps(device.id));
-    } catch (error) {
-      setAppsError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setAppsBusy(false);
-    }
   };
 
   const openApps = () => {
@@ -529,6 +580,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           ) : null}
         </View>
       ) : null}
+      {activityMessage ? (
+        <View style={styles.activityBanner}>
+          <Text numberOfLines={2} style={styles.activityText}>{activityMessage}</Text>
+        </View>
+      ) : null}
       <View style={styles.content}>
         <View style={styles.videoFrame} onLayout={onSurfaceLayout}>
           <View
@@ -554,6 +610,13 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             <Text style={styles.videoTelemetry}>{videoInfo}</Text>
             <Text style={styles.videoTelemetry}>{audioInfo}</Text>
           </View>
+        </View>
+        <View style={styles.streamPanel}>
+          <Text numberOfLines={1} style={styles.streamText}>
+            {streamMetrics
+              ? `Stream ${streamMetrics.source_fps.toFixed(1)} -> ${streamMetrics.decoded_fps.toFixed(1)} -> ${streamMetrics.sent_fps.toFixed(1)} fps · ${streamMetrics.megabits_per_second.toFixed(1)} Mbps`
+              : "Stream metrics pending"}
+          </Text>
         </View>
         <View style={styles.toolbar}>
           {HARDWARE_BUTTONS.map(([name, label]) => (
@@ -868,6 +931,8 @@ const styles = StyleSheet.create({
   connectionError: { color: "#e8b6a3", fontSize: 11, lineHeight: 16, marginTop: 2 },
   retryButton: { borderColor: "#b97455", borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
   retryText: { color: "#f4c7a4", fontSize: 12, fontWeight: "700" },
+  activityBanner: { backgroundColor: "#1b2c3e", borderBottomColor: "#314b64", borderBottomWidth: 1, paddingHorizontal: 16, paddingVertical: 8 },
+  activityText: { color: "#c5d9ed", fontSize: 12, lineHeight: 17 },
   content: { flex: 1, padding: 16 },
   videoFrame: { alignSelf: "center", backgroundColor: "#080d12", borderColor: "#2b3a4b", borderRadius: 16, borderWidth: 1, flex: 1, maxHeight: 720, maxWidth: 520, overflow: "hidden", width: "100%" },
   touchSurface: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },
@@ -875,6 +940,8 @@ const styles = StyleSheet.create({
   videoTitle: { color: "#f1f5fa", fontSize: 20, fontWeight: "700" },
   videoDescription: { color: "#8796a8", fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 280, textAlign: "center" },
   videoTelemetry: { color: "#6f8195", fontSize: 11, marginTop: 12 },
+  streamPanel: { alignItems: "center", minHeight: 26, justifyContent: "center", paddingTop: 6 },
+  streamText: { color: "#70849a", fontSize: 11 },
   toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", paddingTop: 14 },
   hardwareButton: { alignItems: "center", backgroundColor: "#263548", borderColor: "#3b5068", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 42, minWidth: 68, paddingHorizontal: 10 },
   hardwareText: { color: "#e1e9f2", fontSize: 12, fontWeight: "700" },

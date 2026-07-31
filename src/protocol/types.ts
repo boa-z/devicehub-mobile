@@ -137,6 +137,44 @@ export type DeviceDetails = {
   battery: DeviceBattery | null;
 };
 
+export type ClipboardContentKind = "text" | "image";
+
+/** Metadata-only clipboard notification; payload contents never cross the socket. */
+export type ClipboardEvent = {
+  from_device: boolean;
+  kind: ClipboardContentKind;
+  preview: string;
+};
+
+export type DeviceEventKind =
+  | "app_installed"
+  | "app_uninstalled"
+  | "activation_state_changed"
+  | "disk_usage_changed"
+  | "device_name_changed"
+  | "regional_settings_changed"
+  | "developer_image_mounted"
+  | "lock_state_changed";
+
+export type DeviceEvent = {
+  sequence: number;
+  kind: DeviceEventKind;
+};
+
+export type StreamMetrics = {
+  transport_active: boolean;
+  source_fps: number;
+  decoded_fps: number;
+  published_fps: number;
+  sent_fps: number;
+  backend_dropped_fps: number;
+  frame_age_ms: number;
+  websocket_send_ms: number;
+  decoder_accept_ms: number;
+  presentation_ack_ms: number;
+  megabits_per_second: number;
+};
+
 export type LocationStatus = {
   available: boolean;
   active: boolean;
@@ -187,9 +225,12 @@ export type ServerMessage =
   | { type: "server_hello"; payload: ServerHello }
   | { type: "control_lease"; payload: { granted: boolean } }
   | { type: "status"; payload: DeviceStatus }
-  | { type: "clipboard"; payload: unknown }
-  | { type: "device_event"; payload: unknown }
-  | { type: "stream_metrics"; payload: unknown }
+  | { type: "clipboard"; payload: ClipboardEvent }
+  | { type: "device_event"; payload: DeviceEvent }
+  // The server's established wire name is "metrics". Keep the descriptive
+  // alias for future transports without changing the desktop protocol.
+  | { type: "metrics"; payload: StreamMetrics }
+  | { type: "stream_metrics"; payload: StreamMetrics }
   | { type: string; payload?: unknown };
 
 export type ServerHello = {

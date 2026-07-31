@@ -18,7 +18,8 @@ This first client layer provides:
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
 - an installed-app panel that lists user apps and can launch or stop them through the host;
-- parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen.
+- parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen;
+- live WebSocket event handling for clipboard metadata, device changes, and stream metrics. App install/uninstall events refresh the app list while metrics are throttled before reaching React state.
 - foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.
 
 Both client platforms use native media sinks. iOS uses `AVSampleBufferDisplayLayer` and `AVAudioEngine`; Android uses `MediaCodec` and `AudioTrack`. The media queues are bounded and drop stale packets under pressure, so the React Native thread remains available for touch input and connection state.
@@ -70,6 +71,7 @@ The files under `src/protocol` are the only client code that knows the DeviceHub
 - `DHA1`: 12-byte header followed by little-endian signed PCM16 samples.
 - HTTP uses `Authorization: Bearer <token>`.
 - WebSocket uses `/api/ws?device_id=<selection id>` and the `devicehub-mask`/token subprotocols.
+- Text messages include `server_hello`, `control_lease`, `status`, `clipboard`, `device_event`, and `metrics`; the mobile protocol layer validates event payloads before screens consume them. `metrics` is the established server wire name (the client also accepts `stream_metrics` for future transports).
 
 Remote targets must be paired and connected to the host running DeviceHub. This mobile app does not connect directly to devices and does not add Android target-device support: the controlled target set is iPhone and iPad only. Android is a client platform, not a target platform.
 
