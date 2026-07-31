@@ -39,6 +39,8 @@ Pull requests run the same TypeScript and Expo bundle checks plus Android Debug 
 
 Enter the DeviceHub service address and the access token printed by `devicehub-headless`. For a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
+The headless server currently uses HTTP for a trusted local network, so Android's cleartext permission is enabled for this client. Do not expose that listener directly to the Internet; use a TLS reverse proxy or a private VPN before using it outside a trusted LAN.
+
 ## Protocol boundary
 
 The files under `src/protocol` are the only client code that knows the DeviceHub wire format. Screens send typed commands through `DeviceHubSocket`; native media modules will subscribe to `MediaPacket` values without parsing WebSocket frames themselves.

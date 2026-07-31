@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.boa.devicehub.mobile",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -24,7 +25,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      "./plugins/withLocalNetwork"
     ]
   }
 }
