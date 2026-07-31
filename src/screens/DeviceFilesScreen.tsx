@@ -16,14 +16,26 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useI18n } from "../i18n";
 import { DeviceHubClient } from "../protocol/client";
-import type { Device, DeviceFileEntry, DeviceFileList } from "../protocol/types";
+import type {
+  AppDocumentEntry,
+  AppDocumentList,
+  AppStorageScope,
+  Device,
+  DeviceApp,
+  DeviceFileEntry,
+  DeviceFileList,
+} from "../protocol/types";
 
 type Props = {
   client: DeviceHubClient;
   device: Device;
   visible: boolean;
   onClose: () => void;
+  app?: DeviceApp | null;
 };
+
+type StorageEntry = DeviceFileEntry | AppDocumentEntry;
+type StorageList = DeviceFileList | AppDocumentList;
 
 type Prompt = {
   mode: "rename" | "directory";
@@ -64,34 +76,39 @@ function validName(value: string) {
     && !Array.from(name).some((character) => character.charCodeAt(0) < 32);
 }
 
-export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
+export function DeviceFilesScreen({ client, device, visible, onClose, app = null }: Props) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [path, setPath] = useState("/");
-  const [listing, setListing] = useState<DeviceFileList | null>(null);
+  const [listing, setListing] = useState<StorageList | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mutationBusy, setMutationBusy] = useState(false);
   const [prompt, setPrompt] = useState<Prompt>(null);
+  const [scope, setScope] = useState<AppStorageScope>("documents");
 
-  const load = useCallback(async (nextPath = path) => {
+  const load = useCallback(async (nextPath = path, nextScope = scope) => {
     setLoading(true);
     setError(null);
     try {
-      setListing(await client.listDeviceFiles(device.id, normalizePath(nextPath)));
+      const normalizedPath = normalizePath(nextPath);
+      setListing(app
+        ? await client.listAppDocuments(device.id, app.bundle_id, nextScope, normalizedPath)
+        : await client.listDeviceFiles(device.id, normalizedPath));
     } catch (loadError) {
       setListing(null);
       setError(loadError instanceof Error ? loadError.message : String(loadError));
     } finally {
       setLoading(false);
     }
-  }, [client, device.id, path]);
+  }, [app, client, device.id, path, scope]);
 
   useEffect(() => {
     if (!visible) return;
     setPath("/");
-    void load("/");
-  }, [visible, client, device.id]);
+    setScope("documents");
+    void load("/", "documents");
+  }, [visible, client, device.id, app?.bundle_id]);
 
   const entries = useMemo(() => {
     if (!listing) return [];
@@ -102,7 +119,7 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     });
   }, [listing]);
 
-  const navigate = (entry: DeviceFileEntry) => {
+  const navigate = (entry: StorageEntry) => {
     if (entry.kind !== "directory") return;
     const nextPath = normalizePath(entry.path);
     setPath(nextPath);
@@ -115,7 +132,14 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     void load(nextPath);
   };
 
-  const openRename = (entry: DeviceFileEntry) => {
+  const changeScope = (nextScope: AppStorageScope) => {
+    if (!app || nextScope === scope) return;
+    setScope(nextScope);
+    setPath("/");
+    void load("/", nextScope);
+  };
+
+  const openRename = (entry: StorageEntry) => {
     setPrompt({ mode: "rename", path: entry.path, value: entry.name });
   };
 
@@ -132,9 +156,17 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     setError(null);
     try {
       if (prompt.mode === "rename") {
-        await client.renameDeviceFile(device.id, prompt.path, prompt.value.trim());
+        if (app) {
+          await client.renameAppDocument(device.id, app.bundle_id, scope, prompt.path, prompt.value.trim());
+        } else {
+          await client.renameDeviceFile(device.id, prompt.path, prompt.value.trim());
+        }
       } else {
-        await client.createDeviceDirectory(device.id, normalizePath(prompt.path), prompt.value.trim());
+        if (app) {
+          await client.createAppDirectory(device.id, app.bundle_id, scope, normalizePath(prompt.path), prompt.value.trim());
+        } else {
+          await client.createDeviceDirectory(device.id, normalizePath(prompt.path), prompt.value.trim());
+        }
       }
       setPrompt(null);
       await load();
@@ -145,7 +177,7 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     }
   };
 
-  const remove = (entry: DeviceFileEntry) => {
+  const remove = (entry: StorageEntry) => {
     Alert.alert(t("deleteFileTitle"), t("deleteFilePrompt", { name: entry.name }), [
       { text: t("cancel"), style: "cancel" },
       {
@@ -156,7 +188,11 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
             setMutationBusy(true);
             setError(null);
             try {
-              await client.deleteDeviceFile(device.id, entry.path);
+              if (app) {
+                await client.deleteAppDocument(device.id, app.bundle_id, scope, entry.path);
+              } else {
+                await client.deleteDeviceFile(device.id, entry.path);
+              }
               await load();
             } catch (deleteError) {
               setError(deleteError instanceof Error ? deleteError.message : String(deleteError));
@@ -185,7 +221,9 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     setMutationBusy(true);
     setError(null);
     try {
-      const source = client.deviceFileImportSource(device.id, normalizePath(path), asset.name);
+      const source = app
+        ? client.deviceAppImportSource(device.id, app.bundle_id, scope, normalizePath(path), asset.name)
+        : client.deviceFileImportSource(device.id, normalizePath(path), asset.name);
       const response = await FileSystem.uploadAsync(source.uri, asset.uri, {
         headers: {
           ...source.headers,
@@ -205,7 +243,7 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     }
   };
 
-  const exportFile = async (entry: DeviceFileEntry) => {
+  const exportFile = async (entry: StorageEntry) => {
     if (entry.kind !== "file" || mutationBusy || loading) return;
     const cacheDirectory = FileSystem.cacheDirectory;
     if (!cacheDirectory) {
@@ -221,7 +259,9 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
     const safeName = entry.name.replace(/[^a-zA-Z0-9._ -]/g, "_").slice(0, 120) || "device-file";
     const destination = `${cacheDirectory}devicehub-${Date.now()}-${safeName}`;
     try {
-      const source = client.deviceFileExportSource(device.id, entry.path, entry.name);
+      const source = app
+        ? client.deviceAppExportSource(device.id, app.bundle_id, scope, entry.path, entry.name)
+        : client.deviceFileExportSource(device.id, entry.path, entry.name);
       const result = await FileSystem.downloadAsync(source.uri, destination, { headers: source.headers });
       if (result.status < 200 || result.status >= 300) {
         const body = await FileSystem.readAsStringAsync(result.uri).catch(() => "");
@@ -247,13 +287,30 @@ export function DeviceFilesScreen({ client, device, visible, onClose }: Props) {
             <Text style={styles.headerButtonText}>{t("close")}</Text>
           </Pressable>
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>{t("deviceFiles")}</Text>
-            <Text numberOfLines={1} style={styles.subtitle}>{device.name || device.udid}</Text>
+            <Text style={styles.title}>{app ? t("appDocuments") : t("deviceFiles")}</Text>
+            <Text numberOfLines={1} style={styles.subtitle}>{app ? app.name || app.bundle_id : device.name || device.udid}</Text>
           </View>
           <Pressable accessibilityRole="button" disabled={loading || mutationBusy} onPress={() => void load()} style={styles.headerButton}>
             <Text style={styles.headerButtonText}>{t("refresh")}</Text>
           </Pressable>
         </View>
+        {app ? (
+          <View style={styles.scopeToolbar}>
+            <Text style={styles.scopeLabel}>{t("storageScope")}</Text>
+            {(["documents", "container"] as const).map((option) => (
+              <Pressable
+                accessibilityRole="button"
+                key={option}
+                onPress={() => changeScope(option)}
+                style={[styles.scopeButton, scope === option && styles.scopeButtonActive]}
+              >
+                <Text style={[styles.scopeButtonText, scope === option && styles.scopeButtonTextActive]}>
+                  {option === "documents" ? t("documents") : t("container")}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
         <View style={styles.toolbar}>
           <View style={styles.pathCopy}>
             <Text style={styles.pathLabel}>{t("currentPath")}</Text>
@@ -344,6 +401,12 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1, minWidth: 0 },
   title: { color: "#152033", fontSize: 21, fontWeight: "800", textAlign: "center" },
   subtitle: { color: "#778395", fontSize: 11, marginTop: 3, textAlign: "center" },
+  scopeToolbar: { alignItems: "center", backgroundColor: "#ffffff", borderBottomColor: "#e0e5eb", borderBottomWidth: 1, flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  scopeLabel: { color: "#778395", fontSize: 11, fontWeight: "700", marginRight: 2 },
+  scopeButton: { borderColor: "#d9e0e8", borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 },
+  scopeButtonActive: { backgroundColor: "#e6f0ff", borderColor: "#8eb5ec" },
+  scopeButtonText: { color: "#536273", fontSize: 12, fontWeight: "700" },
+  scopeButtonTextActive: { color: "#2368c4" },
   toolbar: { alignItems: "center", backgroundColor: "#ffffff", borderBottomColor: "#e0e5eb", borderBottomWidth: 1, flexDirection: "row", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
   pathCopy: { flex: 1, minWidth: 0 },
   pathLabel: { color: "#778395", fontSize: 10, fontWeight: "700", textTransform: "uppercase" },

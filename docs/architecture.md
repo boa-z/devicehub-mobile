@@ -67,6 +67,22 @@ route, writes to the native cache with Expo FileSystem, and opens the platform
 share sheet. The protocol client only constructs authenticated transfer URLs;
 native file I/O stays in the screen boundary.
 
+Application storage uses the same screen and transfer boundary but a different
+server namespace: `/api/device/apps/{bundle_id}/storage`. The client sends an
+explicit `scope` (`documents` or `container`) with every request and resets the
+path to `/` when the scope changes. The server decides whether the selected app
+can expose Documents or its container; a rejected scope is shown as a scoped
+panel error instead of falling back to public AFC. Only individual files can
+be imported or exported from mobile, while directory creation, rename, and
+delete remain device-side operations.
+
+The control aggregation modal is deliberately a projection of the desktop
+fullscreen device toolbars, not a second device-management navigator. It
+contains the seven hardware actions, reconnect, both rotation actions, a
+screenshot action, and text paste. App lifecycle, AFC, performance, location,
+metadata, restart, and shutdown actions remain outside that modal so the same
+control surface has a stable meaning on both clients.
+
 Performance and device logs use separate, demand-gated HTTP controls. The
 mobile workbench polls performance snapshots and process inventory at a bounded
 interval, then polls logs by sequence cursor so old entries are not duplicated.

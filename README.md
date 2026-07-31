@@ -17,6 +17,7 @@ This first client layer provides:
 - a device information panel for hardware, storage, battery, and regional metadata;
 - on-demand device screenshots, device renaming, paired-companion metadata, and home-screen layout summaries;
 - an authenticated AFC file browser with directory navigation, refresh, rename, create-directory, delete, single-file import, and single-file export/share actions;
+- per-application storage browsing from the Apps panel, with separate Documents and Container scopes and the same bounded single-file transfer actions;
 - a device performance and log workbench with explicit sampling/log-stream controls, process and service-health views, and bounded incremental log polling;
 - authenticated installed-app icons with per-app fallback placeholders;
 - an on-demand bounded application console with incremental output polling;
@@ -99,6 +100,21 @@ downloaded to the app cache and handed to the platform share sheet. Transfers
 are bounded by the server's 64 MiB browser-upload limit, and directories remain
 available for browsing and device-side management but are not exported by the
 mobile client.
+
+Each installed app row also exposes **Files**. The app file browser starts at
+the app's `Documents` scope and can switch to `Container` when the target app
+and the connected development services expose it. The scope is sent on every
+list, mutation, import, and export request; it is not inferred from the current
+path. Container access is therefore subject to the same device trust,
+developer-service, and app availability checks as the server API. The mobile
+client does not attempt to install, sign, or modify an app bundle.
+
+The device control **Controls** page is intentionally limited to the actions
+also represented by the desktop device-view fullscreen toolbars: Home, lock,
+volume up/down, mute, Siri, and Action hardware buttons; reconnect; rotate
+left/right; screenshot; and paste text. App management, AFC, performance,
+location, device metadata, restart, and shutdown remain separate actions on the
+control screen rather than being mixed into this aggregation page.
 
 The Performance action reads the existing device-scoped performance and log
 routes. Sampling and log streaming are opt-in, and a panel only stops a demand

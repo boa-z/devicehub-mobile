@@ -114,6 +114,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [activityMessage, setActivityMessage] = useState<string | null>(null);
   const [appsOpen, setAppsOpen] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [filesApp, setFilesApp] = useState<DeviceApp | null>(null);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [apps, setApps] = useState<DeviceApp[]>([]);
@@ -361,6 +362,17 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     setAppIconErrors({});
     setAppsOpen(true);
     void loadApps();
+  };
+
+  const openDeviceFiles = () => {
+    setFilesApp(null);
+    setFilesOpen(true);
+  };
+
+  const openAppFiles = (app: DeviceApp) => {
+    setAppsOpen(false);
+    setFilesApp(app);
+    setFilesOpen(true);
   };
 
   const toggleApp = async (app: DeviceApp) => {
@@ -716,7 +728,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("apps")}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setFilesOpen(true)} style={styles.secondaryButton}>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={openDeviceFiles} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>{t("files")}</Text>
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setPerformanceOpen(true)} style={styles.secondaryButton}>
@@ -867,6 +879,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                         style={({ pressed }) => [styles.appConsoleAction, pressed && styles.buttonPressed, (appsBusy || consoleBusy) && styles.disabled]}
                       >
                         <Text style={styles.appConsoleText}>{t("appConsole")}</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={appsBusy}
+                        onPress={() => openAppFiles(item)}
+                        style={({ pressed }) => [styles.appConsoleAction, pressed && styles.buttonPressed, appsBusy && styles.disabled]}
+                      >
+                        <Text style={styles.appConsoleText}>{t("files")}</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -1150,7 +1170,11 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       <DeviceFilesScreen
         client={client}
         device={device}
-        onClose={() => setFilesOpen(false)}
+        app={filesApp}
+        onClose={() => {
+          setFilesOpen(false);
+          setFilesApp(null);
+        }}
         visible={filesOpen}
       />
       <PerformanceScreen

@@ -197,6 +197,22 @@ export type DeviceFileList = {
   truncated: boolean;
 };
 
+export type AppStorageScope = "documents" | "container";
+
+export type AppDocumentEntry = {
+  name: string;
+  path: string;
+  kind: DeviceFileKind;
+  size_bytes: number;
+  modified: string;
+};
+
+export type AppDocumentList = {
+  path: string;
+  entries: AppDocumentEntry[];
+  truncated: boolean;
+};
+
 export type ClipboardContentKind = "text" | "image";
 
 /** Metadata-only clipboard notification; payload contents never cross the socket. */

@@ -12,6 +12,8 @@ import type {
   CompanionDevice,
   HomeScreenLayout,
   DeviceFileList,
+  AppDocumentList,
+  AppStorageScope,
   DeviceEvent,
   ForgetDeviceResult,
   LocationStatus,
@@ -349,6 +351,16 @@ export class DeviceHubClient {
     );
   }
 
+  async listAppDocuments(deviceId: string, bundleId: string, scope: AppStorageScope, path = "/") {
+    const query = new URLSearchParams({ path, scope });
+    return this.deviceRequest<AppDocumentList>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/storage?${query.toString()}`,
+      {},
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
+  }
+
   async renameDeviceFile(deviceId: string, path: string, name: string) {
     await this.deviceRequest<void>(deviceId, "/api/device/files/rename", {
       method: "PUT",
@@ -375,6 +387,42 @@ export class DeviceHubClient {
     );
   }
 
+  async createAppDirectory(deviceId: string, bundleId: string, scope: AppStorageScope, directory: string, name: string) {
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/storage/directory`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope, directory, name }),
+      },
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
+  }
+
+  async renameAppDocument(deviceId: string, bundleId: string, scope: AppStorageScope, path: string, name: string) {
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/storage/rename`,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope, path, name }),
+      },
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
+  }
+
+  async deleteAppDocument(deviceId: string, bundleId: string, scope: AppStorageScope, path: string) {
+    const query = new URLSearchParams({ path, scope });
+    await this.deviceRequest<void>(
+      deviceId,
+      `/api/device/apps/${encodeURIComponent(bundleId)}/storage?${query.toString()}`,
+      { method: "DELETE" },
+      DEVICE_FILE_LIST_TIMEOUT_MS,
+    );
+  }
+
   deviceFileImportSource(deviceId: string, directory: string, name: string) {
     const query = new URLSearchParams({ directory, name });
     return {
@@ -390,6 +438,28 @@ export class DeviceHubClient {
     const query = new URLSearchParams({ path, name });
     return {
       uri: `${this.connection.origin}/api/device/files/browser-export?${query.toString()}`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
+  }
+
+  deviceAppImportSource(deviceId: string, bundleId: string, scope: AppStorageScope, directory: string, name: string) {
+    const query = new URLSearchParams({ directory, name, scope });
+    return {
+      uri: `${this.connection.origin}/api/device/apps/${encodeURIComponent(bundleId)}/storage/browser-import?${query.toString()}`,
+      headers: {
+        authorization: `Bearer ${this.connection.token}`,
+        "x-devicehub-device": deviceId,
+      },
+    };
+  }
+
+  deviceAppExportSource(deviceId: string, bundleId: string, scope: AppStorageScope, path: string, name: string) {
+    const query = new URLSearchParams({ path, name, scope });
+    return {
+      uri: `${this.connection.origin}/api/device/apps/${encodeURIComponent(bundleId)}/storage/browser-export?${query.toString()}`,
       headers: {
         authorization: `Bearer ${this.connection.token}`,
         "x-devicehub-device": deviceId,
