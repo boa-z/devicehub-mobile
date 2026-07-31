@@ -87,6 +87,12 @@ export function DeviceFilesScreen({ client, device, visible, onClose, app = null
   const [prompt, setPrompt] = useState<Prompt>(null);
   const [scope, setScope] = useState<AppStorageScope>("documents");
 
+  const scopeAvailable = (candidate: AppStorageScope) => {
+    if (!app) return candidate === "documents";
+    if (candidate === "documents") return app.documents_available;
+    return app.is_developer_app;
+  };
+
   const load = useCallback(async (nextPath = path, nextScope = scope) => {
     setLoading(true);
     setError(null);
@@ -105,9 +111,10 @@ export function DeviceFilesScreen({ client, device, visible, onClose, app = null
 
   useEffect(() => {
     if (!visible) return;
+    const initialScope: AppStorageScope = scopeAvailable("documents") ? "documents" : "container";
     setPath("/");
-    setScope("documents");
-    void load("/", "documents");
+    setScope(initialScope);
+    void load("/", initialScope);
   }, [visible, client, device.id, app?.bundle_id]);
 
   const entries = useMemo(() => {
@@ -189,7 +196,7 @@ export function DeviceFilesScreen({ client, device, visible, onClose, app = null
             setError(null);
             try {
               if (app) {
-                await client.deleteAppDocument(device.id, app.bundle_id, scope, entry.path);
+                await client.deleteAppDocument(device.id, app.bundle_id, scope, entry.path, entry.kind === "directory");
               } else {
                 await client.deleteDeviceFile(device.id, entry.path);
               }
@@ -300,9 +307,10 @@ export function DeviceFilesScreen({ client, device, visible, onClose, app = null
             {(["documents", "container"] as const).map((option) => (
               <Pressable
                 accessibilityRole="button"
+                disabled={!scopeAvailable(option) || loading || mutationBusy}
                 key={option}
                 onPress={() => changeScope(option)}
-                style={[styles.scopeButton, scope === option && styles.scopeButtonActive]}
+                style={[styles.scopeButton, scope === option && styles.scopeButtonActive, !scopeAvailable(option) && styles.disabled]}
               >
                 <Text style={[styles.scopeButtonText, scope === option && styles.scopeButtonTextActive]}>
                   {option === "documents" ? t("documents") : t("container")}

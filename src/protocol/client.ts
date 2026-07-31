@@ -413,8 +413,8 @@ export class DeviceHubClient {
     );
   }
 
-  async deleteAppDocument(deviceId: string, bundleId: string, scope: AppStorageScope, path: string) {
-    const query = new URLSearchParams({ path, scope });
+  async deleteAppDocument(deviceId: string, bundleId: string, scope: AppStorageScope, path: string, recursive = false) {
+    const query = new URLSearchParams({ path, scope, recursive: String(recursive) });
     await this.deviceRequest<void>(
       deviceId,
       `/api/device/apps/${encodeURIComponent(bundleId)}/storage?${query.toString()}`,
