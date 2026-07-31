@@ -6,6 +6,7 @@ import type {
   ServerMessage,
   ServerHello,
   DeviceApp,
+  DeviceDetails,
   ForgetDeviceResult,
   LocationStatus,
   PairDeviceResult,
@@ -30,6 +31,7 @@ export type SocketCallbacks = {
 
 const REQUEST_TIMEOUT_MS = 8_000;
 const DEVICE_COMMAND_TIMEOUT_MS = 12_000;
+const DEVICE_DETAILS_TIMEOUT_MS = 15_000;
 const PAIRING_REQUEST_TIMEOUT_MS = 100_000;
 const FORGET_REQUEST_TIMEOUT_MS = 50_000;
 const SOCKET_HANDSHAKE_TIMEOUT_MS = 8_000;
@@ -203,6 +205,10 @@ export class DeviceHubClient {
 
   async location(deviceId: string) {
     return this.deviceRequest<LocationStatus>(deviceId, "/api/device/location");
+  }
+
+  async deviceDetails(deviceId: string) {
+    return this.deviceRequest<DeviceDetails>(deviceId, "/api/device/details", {}, DEVICE_DETAILS_TIMEOUT_MS);
   }
 
   async setLocation(deviceId: string, latitude: number, longitude: number) {

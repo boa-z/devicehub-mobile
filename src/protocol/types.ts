@@ -62,6 +62,60 @@ export type ForgetDeviceResult = {
   error: string | null;
 };
 
+export type DeviceStorage = {
+  data_capacity_bytes: number | null;
+  data_available_bytes: number | null;
+  system_capacity_bytes: number | null;
+  system_available_bytes: number | null;
+};
+
+export type DeviceBattery = {
+  level_percent: number | null;
+  temperature_celsius: number | null;
+  is_charging: boolean | null;
+  external_connected: boolean | null;
+  fully_charged: boolean | null;
+  cycle_count: number | null;
+  voltage_mv: number | null;
+  instant_amperage_ma: number | null;
+  design_capacity_mah: number | null;
+  full_charge_capacity_mah: number | null;
+  health_percent: number | null;
+  time_remaining_minutes: number | null;
+  adapter_watts: number | null;
+  adapter_name: string | null;
+};
+
+export type DeviceRegionalSettings = {
+  language: string | null;
+  locale: string | null;
+  time_zone: string | null;
+  uses_24_hour_clock: boolean | null;
+};
+
+export type DeviceDetails = {
+  udid: string;
+  name: string;
+  product_type: string;
+  product_version: string;
+  build_version: string | null;
+  device_class: string | null;
+  cpu_architecture: string | null;
+  model_number: string | null;
+  hardware_model: string | null;
+  device_color: string | null;
+  enclosure_color: string | null;
+  serial_number: string | null;
+  ecid: string | null;
+  total_disk_capacity: number | null;
+  storage: DeviceStorage | null;
+  activation_state: string | null;
+  developer_mode_enabled: boolean | null;
+  developer_image_mounted: boolean | null;
+  regional_settings: DeviceRegionalSettings | null;
+  battery: DeviceBattery | null;
+};
+
 export type LocationStatus = {
   available: boolean;
   active: boolean;

@@ -8,6 +8,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -18,7 +19,7 @@ import {
 import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
-import type { Device, DeviceApp, LocationStatus, MultiTouchContact } from "../protocol/types";
+import type { Device, DeviceApp, DeviceDetails, LocationStatus, MultiTouchContact } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
 
 const NativeVideoView = DeviceHubVideoView as any;
@@ -40,6 +41,16 @@ const HARDWARE_BUTTONS = [
 
 function clamp(value: number) {
   return Math.max(0, Math.min(1, value));
+}
+
+function formatBytes(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  if (value < 1_024 ** 3) return `${(value / 1_024 ** 2).toFixed(1)} MB`;
+  return `${(value / 1_024 ** 3).toFixed(1)} GB`;
+}
+
+function formatOptional(value: unknown) {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
 }
 
 function contactsFromEvent(
@@ -100,6 +111,10 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [longitude, setLongitude] = useState("");
   const [locationBusy, setLocationBusy] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [details, setDetails] = useState<DeviceDetails | null>(null);
+  const [detailsBusy, setDetailsBusy] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const appState = useRef(AppState.currentState);
@@ -387,6 +402,23 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     }
   };
 
+  const loadDetails = async () => {
+    setDetailsBusy(true);
+    setDetailsError(null);
+    try {
+      setDetails(await client.deviceDetails(device.id));
+    } catch (error) {
+      setDetailsError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDetailsBusy(false);
+    }
+  };
+
+  const openDetails = () => {
+    setDetailsOpen(true);
+    void loadDetails();
+  };
+
   return (
     <View style={styles.root}>
       <View style={styles.header}>
@@ -481,6 +513,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </Pressable>
           <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openLocation} style={styles.secondaryButton}>
             <Text style={styles.secondaryText}>Location</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" disabled={!connected} onPress={openDetails} style={styles.secondaryButton}>
+            <Text style={styles.secondaryText}>Info</Text>
           </Pressable>
         </View>
       </View>
@@ -634,6 +669,59 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <Modal animationType="slide" onRequestClose={() => setDetailsOpen(false)} visible={detailsOpen}>
+        <View style={styles.pasteModal}>
+          <View style={styles.pasteHeader}>
+            <View style={styles.appsHeaderCopy}>
+              <Text style={styles.appsTitle}>Device information</Text>
+              <Text style={styles.appsSubtitle}>{device.name || "iPhone / iPad"}</Text>
+            </View>
+            <Pressable accessibilityRole="button" onPress={() => setDetailsOpen(false)} style={styles.closeButton}>
+              <Text style={styles.closeText}>Close</Text>
+            </Pressable>
+          </View>
+          {detailsBusy && !details ? (
+            <View style={styles.appsLoading}><ActivityIndicator color="#2368c4" /></View>
+          ) : detailsError ? (
+            <View style={styles.detailErrorBlock}>
+              <Text style={styles.appsError}>{detailsError}</Text>
+              <Pressable accessibilityRole="button" onPress={() => void loadDetails()} style={styles.detailRetryButton}>
+                <Text style={styles.secondaryText}>Retry</Text>
+              </Pressable>
+            </View>
+          ) : details ? (
+            <ScrollView contentContainerStyle={styles.detailsList}>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Identity</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Model</Text><Text style={styles.detailValue}>{formatOptional(details.product_type)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>System</Text><Text style={styles.detailValue}>{formatOptional(details.product_version)}{details.build_version ? ` (${details.build_version})` : ""}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Model number</Text><Text style={styles.detailValue}>{formatOptional(details.model_number)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Serial</Text><Text style={styles.detailValue}>{formatOptional(details.serial_number)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>UDID</Text><Text selectable style={styles.detailValue}>{formatOptional(details.udid)}</Text></View>
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Storage</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Data available</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_available_bytes)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Data capacity</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.data_capacity_bytes)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>System available</Text><Text style={styles.detailValue}>{formatBytes(details.storage?.system_available_bytes)}</Text></View>
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Battery</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Level</Text><Text style={styles.detailValue}>{details.battery?.level_percent == null ? "-" : `${details.battery.level_percent}%`}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Temperature</Text><Text style={styles.detailValue}>{details.battery?.temperature_celsius == null ? "-" : `${details.battery.temperature_celsius.toFixed(1)} °C`}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Charging</Text><Text style={styles.detailValue}>{details.battery?.is_charging == null ? "-" : details.battery.is_charging ? "Yes" : "No"}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Health</Text><Text style={styles.detailValue}>{details.battery?.health_percent == null ? "-" : `${details.battery.health_percent.toFixed(1)}%`}</Text></View>
+              </View>
+              <View style={styles.detailSection}>
+                <Text style={styles.detailSectionTitle}>Regional settings</Text>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Language</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.language)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Locale</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.locale)}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>Time zone</Text><Text style={styles.detailValue}>{formatOptional(details.regional_settings?.time_zone)}</Text></View>
+              </View>
+            </ScrollView>
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -702,4 +790,12 @@ const styles = StyleSheet.create({
   locationInput: { backgroundColor: "#ffffff", borderColor: "#d9e0e8", borderRadius: 10, borderWidth: 1, color: "#152033", fontSize: 16, marginBottom: 12, padding: 14 },
   locationClearButton: { alignItems: "center", justifyContent: "center", marginTop: 8, minHeight: 42 },
   locationClearText: { color: "#bd2d3b", fontSize: 14, fontWeight: "700" },
+  detailsList: { padding: 18 },
+  detailSection: { backgroundColor: "#ffffff", borderColor: "#dce2e9", borderRadius: 12, borderWidth: 1, marginBottom: 12, padding: 14 },
+  detailSectionTitle: { color: "#152033", fontSize: 15, fontWeight: "800", marginBottom: 8 },
+  detailRow: { alignItems: "flex-start", borderTopColor: "#eef1f4", borderTopWidth: 1, flexDirection: "row", gap: 12, paddingVertical: 9 },
+  detailLabel: { color: "#778395", fontSize: 12, width: 112 },
+  detailValue: { color: "#3f4b5d", flex: 1, fontSize: 13, textAlign: "right" },
+  detailErrorBlock: { padding: 18 },
+  detailRetryButton: { alignSelf: "flex-start", borderColor: "#b8cdea", borderRadius: 9, borderWidth: 1, marginTop: 12, paddingHorizontal: 14, paddingVertical: 9 },
 });

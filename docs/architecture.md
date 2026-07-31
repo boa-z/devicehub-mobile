@@ -34,6 +34,12 @@ locally, and exposes an explicit clear action so a test can restore the real
 device location. The server remains responsible for DVT/legacy backend choice
 and device readiness errors.
 
+Device details are fetched on demand rather than with the 2-second inventory
+poll. This keeps metadata queries off the control path and lets the server's
+bounded read-only timeout surface as a retryable panel error. Numeric storage
+and battery values remain typed so the UI can distinguish an unavailable value
+from zero.
+
 Device inventory operations remain separate from the active WebSocket: refresh,
 connect, disconnect, and reconnect are asynchronous manager commands. USB trust
 pairing and trust removal use the same selection ID but may wait for an on-device
