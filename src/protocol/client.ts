@@ -4,6 +4,7 @@ import type {
   DeviceStatus,
   MediaPacket,
   ServerMessage,
+  ServerHello,
 } from "./types";
 
 export type DeviceHubConnection = {
@@ -20,7 +21,11 @@ export type SocketCallbacks = {
   onMessage?: (message: ServerMessage) => void;
   onMedia?: (packet: MediaPacket) => void;
   onControlLease?: (granted: boolean) => void;
+  onServerHello?: (hello: ServerHello) => void;
 };
+
+const REQUEST_TIMEOUT_MS = 8_000;
+const MOBILE_PROTOCOL_VERSION = 1;
 
 export class DeviceHubHttpError extends Error {
   readonly status: number;
@@ -32,6 +37,13 @@ export class DeviceHubHttpError extends Error {
   }
 }
 
+export class DeviceHubRequestTimeoutError extends Error {
+  constructor(path: string) {
+    super(`DeviceHub request timed out after ${REQUEST_TIMEOUT_MS / 1_000} seconds: ${path}`);
+    this.name = "DeviceHubRequestTimeoutError";
+  }
+}
+
 function normalizeOrigin(value: string) {
   const trimmed = value.trim().replace(/\/+$/, "");
   if (!trimmed) throw new Error("Server address is required");
@@ -40,7 +52,25 @@ function normalizeOrigin(value: string) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error("Server address must use http or https");
   }
-  return parsed.toString().replace(/\/$/, "");
+  return parsed.origin;
+}
+
+/** Accept either a bare host or the URL printed by the headless server. */
+export function parseConnectionInput(originInput: string, tokenInput: string): DeviceHubConnection {
+  const trimmedOrigin = originInput.trim();
+  const candidate = /^https?:\/\//i.test(trimmedOrigin)
+    ? trimmedOrigin
+    : `http://${trimmedOrigin}`;
+  const parsed = new URL(candidate);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Server address must use http or https");
+  }
+  const hash = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+  const fragmentParams = new URLSearchParams(hash);
+  const queryToken = new URLSearchParams(parsed.search).get("access_token");
+  const token = tokenInput.trim() || fragmentParams.get("access_token")?.trim() || queryToken?.trim() || "";
+  if (!token) throw new Error("Access token is required (paste the full headless URL or enter the token)");
+  return { origin: parsed.origin, token };
 }
 
 function websocketOrigin(origin: string) {
@@ -91,11 +121,32 @@ export class DeviceHubClient {
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${this.connection.token}`);
-    const response = await fetch(`${this.connection.origin}${path}`, { ...init, headers });
-    if (!response.ok) throw new DeviceHubHttpError(response.status, await readError(response));
-    if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
-    const text = await response.text();
-    return (text ? JSON.parse(text) : undefined) as T;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const upstreamSignal = init.signal;
+    const abortFromUpstream = () => controller.abort();
+    upstreamSignal?.addEventListener("abort", abortFromUpstream, { once: true });
+    try {
+      const { signal: _ignoredSignal, ...requestInit } = init;
+      const response = await fetch(`${this.connection.origin}${path}`, {
+        ...requestInit,
+        headers,
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new DeviceHubHttpError(response.status, await readError(response));
+      if (response.status === 204 || response.headers.get("content-length") === "0") return undefined as T;
+      const text = await response.text();
+      return (text ? JSON.parse(text) : undefined) as T;
+    } catch (error) {
+      if (controller.signal.aborted) {
+        if (upstreamSignal?.aborted) throw error;
+        throw new DeviceHubRequestTimeoutError(path);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      upstreamSignal?.removeEventListener("abort", abortFromUpstream);
+    }
   }
 }
 
@@ -108,6 +159,7 @@ export class DeviceHubSocket {
   private readonly connection: DeviceHubConnection;
   private readonly deviceId: string;
   private readonly platform: MobilePlatform;
+  private negotiatedHello: ServerHello | null = null;
 
   constructor(
     connection: DeviceHubConnection,
@@ -189,11 +241,18 @@ export class DeviceHubSocket {
   }
 
   private async handleMessage(source: WebSocket, data: unknown) {
+    let protocolError = false;
     try {
       if (this.socket !== source || this.closed) return;
       if (typeof data === "string") {
         const message = JSON.parse(data) as ServerMessage;
         this.dispatch((listener) => listener.onMessage?.(message));
+        if (message.type === "server_hello") {
+          protocolError = true;
+          const hello = parseServerHello(message.payload);
+          this.negotiatedHello = hello;
+          this.dispatch((listener) => listener.onServerHello?.(hello));
+        }
         if (message.type === "control_lease") {
           const granted = (message.payload as { granted?: unknown }).granted;
           if (typeof granted === "boolean") {
@@ -215,6 +274,7 @@ export class DeviceHubSocket {
       const packet = parseMediaPacket(buffer);
       if (packet) this.dispatch((listener) => listener.onMedia?.(packet));
     } catch (error) {
+      if (protocolError) source.close();
       this.dispatch((listener) => listener.onError?.(error));
     }
   }
@@ -223,4 +283,26 @@ export class DeviceHubSocket {
     callback(this.callbacks);
     for (const listener of this.listeners) callback(listener);
   }
+
+  get serverHello() {
+    return this.negotiatedHello;
+  }
+}
+
+function parseServerHello(payload: unknown): ServerHello {
+  if (!payload || typeof payload !== "object") throw new Error("DeviceHub server returned an invalid handshake");
+  const value = payload as Partial<ServerHello>;
+  if (value.protocol_version !== MOBILE_PROTOCOL_VERSION) {
+    throw new Error(`Unsupported DeviceHub protocol version: ${String(value.protocol_version)}`);
+  }
+  if (!Array.isArray(value.target_platforms) || !value.target_platforms.includes("ios")) {
+    throw new Error("DeviceHub server does not advertise iPhone/iPad targets");
+  }
+  if (value.video?.codec !== "hevc" || value.video?.packet !== "DHV2") {
+    throw new Error("DeviceHub server does not advertise the HEVC video stream");
+  }
+  if (value.audio?.codec !== "pcm_s16le" || value.audio?.packet !== "DHA1") {
+    throw new Error("DeviceHub server does not advertise the PCM audio stream");
+  }
+  return value as ServerHello;
 }

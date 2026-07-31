@@ -4,7 +4,12 @@ import { Platform } from "react-native";
 import { ConnectionScreen } from "./src/screens/ConnectionScreen";
 import { ControlScreen } from "./src/screens/ControlScreen";
 import { DeviceListScreen } from "./src/screens/DeviceListScreen";
-import { DeviceHubClient, DeviceHubHttpError, type DeviceHubSocket } from "./src/protocol/client";
+import {
+  DeviceHubClient,
+  DeviceHubHttpError,
+  parseConnectionInput,
+  type DeviceHubSocket,
+} from "./src/protocol/client";
 import type { Device, DeviceStatus } from "./src/protocol/types";
 import { clearSavedConnection, loadSavedConnection, saveConnection } from "./src/storage/credentials";
 
@@ -49,7 +54,12 @@ export default function App() {
     setBusy(true);
     setError(null);
     try {
-      const nextClient = new DeviceHubClient(origin, token, Platform.OS === "android" ? "android" : "ios");
+      const connection = parseConnectionInput(origin, token);
+      const nextClient = new DeviceHubClient(
+        connection.origin,
+        connection.token,
+        Platform.OS === "android" ? "android" : "ios",
+      );
       const nextStatus = await nextClient.status();
       setClient(nextClient);
       setStatus(nextStatus);

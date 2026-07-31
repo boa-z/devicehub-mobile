@@ -37,12 +37,12 @@ export function ConnectionScreen({ initialOrigin, initialToken, busy, error, onS
           Use the address and access token printed by the DeviceHub headless service.
         </Text>
         <View style={styles.form}>
-          <Text style={styles.label}>Service address</Text>
+          <Text style={styles.label}>Service address or headless link</Text>
           <TextInput
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
-            placeholder="http://192.168.1.10:8080"
+            placeholder="http://192.168.1.10:8080/#access_token=..."
             placeholderTextColor="#8c96a5"
             style={styles.input}
             value={origin}
