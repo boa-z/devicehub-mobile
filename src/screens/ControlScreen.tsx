@@ -75,8 +75,9 @@ function changedContact(
 }
 
 export function ControlScreen({ client, socket, device, onBack }: Props) {
-  const [connected, setConnected] = useState(socket.readyState === 1);
+  const [connected, setConnected] = useState(socket.serverHello !== null);
   const [controlGranted, setControlGranted] = useState(socket.controlGranted);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
   const [videoInfo, setVideoInfo] = useState("Waiting for video frames");
   const [audioInfo, setAudioInfo] = useState("Audio off");
@@ -118,9 +119,15 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       }, delay);
     };
     const onOpen = () => {
-      setConnected(true);
+      // The transport can be open before the DeviceHub protocol handshake.
+      // Media demand starts only after server_hello is accepted below.
+      setConnectionError(null);
       lastVideoInfoAt.current = 0;
       lastAudioInfoAt.current = 0;
+    };
+    const onServerHello = () => {
+      setConnected(true);
+      setConnectionError(null);
       reconnectAttempt.current = 0;
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
@@ -133,6 +140,10 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       resetNativeMedia();
       setConnected(false);
       scheduleReconnect();
+    };
+    const onError = (error: unknown) => {
+      if (disposed) return;
+      setConnectionError(error instanceof Error ? error.message : String(error));
     };
     const onLease = (granted: boolean) => setControlGranted(granted);
     const onMedia = (packet: import("../protocol/types").MediaPacket) => {
@@ -165,11 +176,13 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     const unsubscribe = socket.subscribe({
       onOpen,
       onClose,
+      onError,
       onControlLease: onLease,
       onMedia,
+      onServerHello,
     });
     setControlGranted(socket.controlGranted);
-    if (socket.readyState === 1 && appState.current === "active") {
+    if (socket.serverHello !== null && appState.current === "active") {
       setConnected(true);
       requestMedia();
     }
@@ -179,6 +192,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       if (nextState === "active" && previousState !== "active") {
         setConnected(false);
         setControlGranted(false);
+        setConnectionError(null);
         resetNativeMedia();
         socket.reconnect(true);
       } else if (nextState !== "active" && previousState === "active") {
@@ -265,6 +279,26 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         </View>
         <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{device.connection}</Text></View>
       </View>
+      {!connected || connectionError ? (
+        <View style={styles.connectionBanner}>
+          <View style={styles.connectionCopy}>
+            <Text style={styles.connectionTitle}>{connected ? "Connection warning" : "Connecting to DeviceHub"}</Text>
+            {connectionError ? <Text style={styles.connectionError}>{connectionError}</Text> : null}
+          </View>
+          {!connected ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setConnectionError(null);
+                socket.reconnect(true);
+              }}
+              style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
       <View style={styles.content}>
         <View style={styles.videoFrame} onLayout={onSurfaceLayout}>
           <View
@@ -380,6 +414,12 @@ const styles = StyleSheet.create({
   disconnected: { color: "#f0a36a" },
   headerBadge: { backgroundColor: "#2a3747", borderRadius: 7, marginLeft: 8, paddingHorizontal: 8, paddingVertical: 5 },
   headerBadgeText: { color: "#bfccda", fontSize: 11, fontWeight: "700" },
+  connectionBanner: { alignItems: "center", backgroundColor: "#2a2020", borderBottomColor: "#523737", borderBottomWidth: 1, flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  connectionCopy: { flex: 1, minWidth: 0 },
+  connectionTitle: { color: "#f4c7a4", fontSize: 12, fontWeight: "700" },
+  connectionError: { color: "#e8b6a3", fontSize: 11, lineHeight: 16, marginTop: 2 },
+  retryButton: { borderColor: "#b97455", borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 7 },
+  retryText: { color: "#f4c7a4", fontSize: 12, fontWeight: "700" },
   content: { flex: 1, padding: 16 },
   videoFrame: { alignSelf: "center", backgroundColor: "#080d12", borderColor: "#2b3a4b", borderRadius: 16, borderWidth: 1, flex: 1, maxHeight: 720, maxWidth: 520, overflow: "hidden", width: "100%" },
   touchSurface: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },

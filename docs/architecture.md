@@ -35,6 +35,13 @@ Every mobile socket sends `client_hello` after opening:
 
 The server replies with `server_hello`, including the supported packet formats and target platform list. The current target list contains only `ios` because DeviceHub controls iPhone/iPad sessions.
 
+The control screen treats the socket as ready only after `server_hello` has been
+validated. Video and audio demand are sent after that point, rather than merely
+when the underlying WebSocket reports `OPEN`. The mobile client applies an
+eight-second connection/handshake deadline; a timeout closes that socket and
+enters the existing bounded reconnect loop. The control screen exposes the
+latest handshake error and a manual retry action while reconnecting.
+
 ## Performance rules
 
 - Keep control messages small and JSON encoded.
