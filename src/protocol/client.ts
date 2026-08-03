@@ -40,6 +40,7 @@ export type SocketCallbacks = {
   onMedia?: (packet: MediaPacket) => void;
   onControlLease?: (granted: boolean) => void;
   onServerHello?: (hello: ServerHello) => void;
+  onStatus?: (status: DeviceStatus) => void;
   onClipboard?: (event: ClipboardEvent) => void;
   onDeviceEvent?: (event: DeviceEvent) => void;
   onStreamMetrics?: (metrics: StreamMetrics) => void;
@@ -656,6 +657,10 @@ export class DeviceHubSocket {
           this.negotiatedHello = hello;
           this.dispatch((listener) => listener.onServerHello?.(hello));
         }
+        if (message.type === "status") {
+          const status = parseDeviceStatus(message.payload);
+          this.dispatch((listener) => listener.onStatus?.(status));
+        }
         if (message.type === "control_lease") {
           const granted = (message.payload as { granted?: unknown }).granted;
           if (typeof granted === "boolean") {
@@ -760,6 +765,20 @@ function parseClipboardEvent(payload: unknown): ClipboardEvent {
     kind: value.kind,
     preview: value.preview,
   };
+}
+
+function parseDeviceStatus(payload: unknown): DeviceStatus {
+  const value = asRecord(payload);
+  const orientations: DeviceStatus["orientation"][] = [
+    "portrait",
+    "portrait_upside_down",
+    "landscape_left",
+    "landscape_right",
+  ];
+  if (!orientations.includes(value.orientation as DeviceStatus["orientation"])) {
+    throw new Error("DeviceHub server returned an invalid orientation status");
+  }
+  return value as DeviceStatus;
 }
 
 function parseDeviceEvent(payload: unknown): DeviceEvent {

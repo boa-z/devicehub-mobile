@@ -24,6 +24,7 @@ jobs:
     env:
       IPA_NAME: devicehub-mobile-unsigned.ipa
       DEVICEHUB_MOBILE_BUILD_NUMBER: ${{ github.run_number }}
+      SOURCE_PATH: .github/apps_nightly.json
 
     steps:
       - name: Check out source
@@ -85,6 +86,21 @@ jobs:
           unzip -Z1 "$ipa_path" | grep -Fxq "Payload/devicehubmobile.app/Info.plist"
           shasum -a 256 "$ipa_path" > "$ipa_path.sha256"
 
+      - name: Generate AltStore and SideStore nightly source
+        run: |
+          set -euo pipefail
+
+          base_version="$(node -p "require('./package.json').version")"
+          version="${base_version}+${DEVICEHUB_MOBILE_BUILD_NUMBER}"
+          commit_message="$(git log -1 --pretty=%s)"
+          export VERSION_LABEL="$version"
+          export LOCAL_IPA_PATH="$IPA_NAME"
+          export COMMIT_SHA="$GITHUB_SHA"
+          export COMMIT_MSG="$commit_message"
+          export NIGHTLY_LINK="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          python .github/update_json.py
+          python -m json.tool "$SOURCE_PATH" >/dev/null
+
       - name: Upload IPA as workflow artifact
         uses: actions/upload-artifact@v7
         with:
@@ -92,6 +108,7 @@ jobs:
           path: |
             devicehub-mobile-unsigned.ipa
             devicehub-mobile-unsigned.ipa.sha256
+            .github/apps_nightly.json
           if-no-files-found: error
           retention-days: 14
 
@@ -101,16 +118,34 @@ jobs:
         run: |
           set -euo pipefail
 
+          base_version="$(node -p "require('./package.json').version")"
+          version="${base_version}+${DEVICEHUB_MOBILE_BUILD_NUMBER}"
+          commit="${GITHUB_SHA:0:7}"
+          headline="$(git log -1 --pretty=%s)"
+          workflow_link="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          release_notes=$(cat <<EOF
+          Automated unsigned iOS IPA build from the main branch.
+
+          Version: $version
+          Commit: $commit
+          Message: $headline
+          Workflow: $workflow_link
+
+          This is a prerelease and is not signed for App Store or direct installation.
+          EOF
+          )
+
           if ! gh release view nightly --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create nightly \
               --repo "$GITHUB_REPOSITORY" \
               --title "DeviceHub Mobile Nightly" \
-              --notes "Automated unsigned iOS IPA build from the main branch. This is a prerelease and is not signed for App Store or direct installation." \
+              --notes "$release_notes" \
               --prerelease
           else
             gh release edit nightly \
               --repo "$GITHUB_REPOSITORY" \
               --title "DeviceHub Mobile Nightly" \
+              --notes "$release_notes" \
               --prerelease
           fi
 
@@ -118,4 +153,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             "$IPA_NAME" \
             "$IPA_NAME.sha256" \
+            "$SOURCE_PATH" \
             --clobber

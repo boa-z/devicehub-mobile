@@ -1,0 +1,41 @@
+{
+  "name": "DeviceHub Mobile (nightly)",
+  "identifier": "com.boa.devicehub.mobile.source.nightly",
+  "website": "https://github.com/boa-z/devicehub-mobile",
+  "subtitle": "DeviceHub Mobile official nightly AltStore source.",
+  "description": "This is the official nightly AltStore source for DeviceHub Mobile.\n\nConnect to DeviceHub headless or LAN services and control iPhone and iPad devices with live audio, video, and touch input.",
+  "tintColor": "#2368C4",
+  "iconURL": "https://raw.githubusercontent.com/boa-z/devicehub-mobile/main/assets/icon.png",
+  "apps": [
+    {
+      "beta": true,
+      "name": "DeviceHub Mobile (nightly)",
+      "bundleIdentifier": "com.boa.devicehub.mobile",
+      "developerName": "boa-z",
+      "subtitle": "iOS client for DeviceHub streaming and remote control.",
+      "localizedDescription": "Connect to DeviceHub headless or LAN services and control iPhone and iPad devices with live audio, video, and touch input.",
+      "category": "developer",
+      "tintColor": "#2368C4",
+      "iconURL": "https://raw.githubusercontent.com/boa-z/devicehub-mobile/main/assets/icon.png",
+      "screenshotURLs": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {
+          "NSLocalNetworkUsageDescription": "DeviceHub Mobile discovers DeviceHub services on your trusted local network."
+        }
+      },
+      "versions": [],
+      "releaseChannels": [
+        {
+          "track": "stable",
+          "releases": []
+        },
+        {
+          "track": "nightly",
+          "releases": []
+        }
+      ]
+    }
+  ],
+  "news": []
+}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { useI18n } from "../i18n";
-import { projectTouchPoint, type TouchSurfaceSize, type VideoFrameSize } from "../input/touchCoordinates";
+import { displayedVideoSize, projectTouchPoint, type TouchSurfaceSize, type VideoFrameSize } from "../input/touchCoordinates";
 import type { MultiTouchContact, Orientation } from "../protocol/types";
 
 type TouchFeedbackAction = "down" | "move" | "up";
@@ -67,12 +67,10 @@ function orientedCoordinates(x: number, y: number, orientation: Orientation, fra
       : orientation === "landscape_left"
         ? [1 - displayY, displayX]
         : [displayX, displayY];
-  const nativeFrame = orientation === "landscape_left" || orientation === "landscape_right"
-    ? { width: frame?.height, height: frame?.width }
-    : { width: frame?.width, height: frame?.height };
+  const displayFrame = displayedVideoSize(frame, orientation);
   return {
-    display: `${normalizedCoordinate(displayX, frame?.width)}, ${normalizedCoordinate(displayY, frame?.height)}`,
-    native: `${normalizedCoordinate(nativeX, nativeFrame.width)}, ${normalizedCoordinate(nativeY, nativeFrame.height)}`,
+    display: `${normalizedCoordinate(displayX, displayFrame?.width)}, ${normalizedCoordinate(displayY, displayFrame?.height)}`,
+    native: `${normalizedCoordinate(nativeX, frame?.width)}, ${normalizedCoordinate(nativeY, frame?.height)}`,
   };
 }
 
@@ -129,7 +127,7 @@ export function TouchFeedbackOverlay({ visible, surface, video, contacts: inputC
         {latest && actionLabel ? <Text style={styles.summaryText}>{actionLabel} · D{latest.identity}</Text> : null}
       </View>
       {trail.map((event, index) => {
-        const point = projectTouchPoint(event.x, event.y, surface, video);
+        const point = projectTouchPoint(event.x, event.y, surface, video, orientation);
         return (
           <View
             key={`${event.identity}:${event.at}:${index}`}
@@ -142,7 +140,7 @@ export function TouchFeedbackOverlay({ visible, surface, video, contacts: inputC
         );
       })}
       {contacts.map((contact) => {
-        const point = projectTouchPoint(contact.x, contact.y, surface, video);
+        const point = projectTouchPoint(contact.x, contact.y, surface, video, orientation);
         const labelOnLeft = point.x > surface.width * 0.68;
         const labelAbove = point.y > surface.height * 0.72;
         const coordinates = orientedCoordinates(contact.x, contact.y, orientation, video);

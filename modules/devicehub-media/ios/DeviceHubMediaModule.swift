@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import ExpoModulesCore
 
 public final class DeviceHubMediaModule: Module {
@@ -24,11 +25,26 @@ public final class DeviceHubMediaModule: Module {
       view.reset()
     }
 
+    Function("isPictureInPictureSupported") {
+      AVPictureInPictureController.isPictureInPictureSupported()
+    }
+
+    Function("startPictureInPicture") { (view: DeviceHubVideoView) in
+      view.startPictureInPicture()
+    }
+
+    Function("stopPictureInPicture") { (view: DeviceHubVideoView) in
+      view.stopPictureInPicture()
+    }
+
     View(DeviceHubVideoView.self) {
       Prop("contentMode") { (view: DeviceHubVideoView, contentMode: String) in
         view.contentModeName = contentMode
       }
-      Events("onVideoStatus")
+      Prop("orientation") { (view: DeviceHubVideoView, orientation: String) in
+        view.orientationName = orientation
+      }
+      Events("onVideoStatus", "onPictureInPictureStatus")
     }
   }
 }

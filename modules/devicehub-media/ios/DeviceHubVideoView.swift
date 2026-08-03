@@ -1,10 +1,16 @@
 import AVFoundation
+import AVKit
 import ExpoModulesCore
 
-final class DeviceHubVideoView: ExpoView {
+final class DeviceHubVideoView: ExpoView, AVPictureInPictureControllerDelegate, AVPictureInPictureSampleBufferPlaybackDelegate {
   let displayLayer = AVSampleBufferDisplayLayer()
+  let onVideoStatus = EventDispatcher()
+  let onPictureInPictureStatus = EventDispatcher()
   var contentModeName = "fit" {
     didSet { updateGravity() }
+  }
+  var orientationName = "portrait" {
+    didSet { setNeedsLayout() }
   }
 
   private let decodeQueue = DispatchQueue(label: "com.boa.devicehub.media.video", qos: .userInteractive)
@@ -17,6 +23,7 @@ final class DeviceHubVideoView: ExpoView {
   private var sps: Data?
   private var pps: Data?
   private var streamGeneration = 0
+  private var pictureInPictureController: AVPictureInPictureController?
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -26,7 +33,28 @@ final class DeviceHubVideoView: ExpoView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    displayLayer.frame = bounds
+    let isLandscape = orientationName == "landscape_left" || orientationName == "landscape_right"
+    let layerSize = isLandscape
+      ? CGSize(width: bounds.height, height: bounds.width)
+      : bounds.size
+    displayLayer.bounds = CGRect(origin: .zero, size: layerSize)
+    displayLayer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+    displayLayer.setAffineTransform(orientationTransform)
+  }
+
+  func startPictureInPicture() -> Bool {
+    guard #available(iOS 15.0, *), AVPictureInPictureController.isPictureInPictureSupported() else {
+      return false
+    }
+    let controller = pictureInPictureController ?? makePictureInPictureController()
+    guard controller.isPictureInPicturePossible else { return false }
+    controller.startPictureInPicture()
+    return true
+  }
+
+  func stopPictureInPicture() {
+    guard #available(iOS 15.0, *), let controller = pictureInPictureController else { return }
+    controller.stopPictureInPicture()
   }
 
   @discardableResult
@@ -200,6 +228,109 @@ final class DeviceHubVideoView: ExpoView {
 
   private func updateGravity() {
     displayLayer.videoGravity = contentModeName == "fill" ? .resizeAspectFill : .resizeAspect
+  }
+
+  private var orientationTransform: CGAffineTransform {
+    switch orientationName {
+    case "landscape_right": return CGAffineTransform(rotationAngle: CGFloat.pi / 2)
+    case "landscape_left": return CGAffineTransform(rotationAngle: -CGFloat.pi / 2)
+    case "portrait_upside_down": return CGAffineTransform(rotationAngle: CGFloat.pi)
+    default: return .identity
+    }
+  }
+
+  @available(iOS 15.0, *)
+  private func makePictureInPictureController() -> AVPictureInPictureController {
+    let source = AVPictureInPictureController.ContentSource(
+      sampleBufferDisplayLayer: displayLayer,
+      playbackDelegate: self
+    )
+    let controller = AVPictureInPictureController(contentSource: source)
+    controller.delegate = self
+    controller.requiresLinearPlayback = true
+    controller.canStartPictureInPictureAutomaticallyFromInline = true
+    pictureInPictureController = controller
+    return controller
+  }
+
+  private func sendPictureInPictureStatus(_ state: String, detail: String? = nil) {
+    var payload: [String: Any] = ["state": state]
+    if let detail { payload["detail"] = detail }
+    onPictureInPictureStatus(payload)
+  }
+
+  // MARK: AVPictureInPictureControllerDelegate
+
+  func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    sendPictureInPictureStatus("starting")
+  }
+
+  func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    sendPictureInPictureStatus("started")
+  }
+
+  func pictureInPictureController(
+    _ pictureInPictureController: AVPictureInPictureController,
+    failedToStartPictureInPictureWithError error: Error
+  ) {
+    sendPictureInPictureStatus("failed", detail: error.localizedDescription)
+  }
+
+  func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    sendPictureInPictureStatus("stopping")
+  }
+
+  func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    sendPictureInPictureStatus("stopped")
+  }
+
+  func pictureInPictureController(
+    _ pictureInPictureController: AVPictureInPictureController,
+    restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
+  ) {
+    completionHandler(true)
+  }
+
+  // MARK: AVPictureInPictureSampleBufferPlaybackDelegate
+
+  func pictureInPictureController(
+    _ pictureInPictureController: AVPictureInPictureController,
+    setPlaying playing: Bool
+  ) {
+    // DeviceHub is a live stream. There is no seekable timeline to pause or resume.
+  }
+
+  func pictureInPictureControllerTimeRangeForPlayback(
+    _ pictureInPictureController: AVPictureInPictureController
+  ) -> CMTimeRange {
+    CMTimeRange(start: .zero, duration: .positiveInfinity)
+  }
+
+  func pictureInPictureControllerIsPlaybackPaused(
+    _ pictureInPictureController: AVPictureInPictureController
+  ) -> Bool {
+    false
+  }
+
+  func pictureInPictureController(
+    _ pictureInPictureController: AVPictureInPictureController,
+    didTransitionToRenderSize newRenderSize: CMVideoDimensions
+  ) {
+    // The stream is already bounded by the server's negotiated frame size.
+  }
+
+  func pictureInPictureController(
+    _ pictureInPictureController: AVPictureInPictureController,
+    skipByInterval skipInterval: CMTime,
+    completion completionHandler: @escaping () -> Void
+  ) {
+    completionHandler()
+  }
+
+  func pictureInPictureControllerShouldProhibitBackgroundAudioPlayback(
+    _ pictureInPictureController: AVPictureInPictureController
+  ) -> Bool {
+    false
   }
 
   private static func nalUnits(in data: Data) -> [Data] {

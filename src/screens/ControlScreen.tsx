@@ -30,6 +30,7 @@ import type {
   DeviceApp,
   DeviceDetails,
   DeviceEvent,
+  DeviceStatus,
   CompanionDevice,
   HomeScreenLayout,
   LocationStatus,
@@ -71,12 +72,13 @@ function contactsFromEvent(
   event: GestureResponderEvent,
   surface: { width: number; height: number },
   video: VideoFrameSize | null,
+  orientation: Orientation,
   identities: TouchIdentityAllocator,
 ): MultiTouchContact[] {
   return event.nativeEvent.touches.flatMap((touch) => {
     const identity = identities.identityFor(touch.identifier);
     if (identity === null) return [];
-    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video);
+    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video, orientation);
     return [{
       identity,
       touching: true,
@@ -90,12 +92,13 @@ function changedContact(
   event: GestureResponderEvent,
   surface: { width: number; height: number },
   video: VideoFrameSize | null,
+  orientation: Orientation,
   identities: TouchIdentityAllocator,
 ): MultiTouchContact[] {
   return event.nativeEvent.changedTouches.flatMap((touch) => {
     const identity = identities.identityFor(touch.identifier);
     if (identity === null) return [];
-    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video);
+    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video, orientation);
     return [{
       identity,
       touching: false,
@@ -112,6 +115,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
   const [controlGranted, setControlGranted] = useState(socket.controlGranted);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [surface, setSurface] = useState({ width: 1, height: 1 });
+  const [currentOrientation, setCurrentOrientation] = useState<Orientation>(orientation);
   const [videoInfo, setVideoInfo] = useState(() => t("waitingVideoFrames"));
   const [audioInfo, setAudioInfo] = useState(() => t("audioOff"));
   const [streamMetrics, setStreamMetrics] = useState<StreamMetrics | null>(null);
@@ -122,6 +126,8 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [pictureInPictureSupported, setPictureInPictureSupported] = useState(false);
+  const [pictureInPictureActive, setPictureInPictureActive] = useState(false);
   const [touchFeedbackDebug, setTouchFeedbackDebug] = useState(false);
   const [touchFeedbackContacts, setTouchFeedbackContacts] = useState<MultiTouchContact[]>([]);
   const [apps, setApps] = useState<DeviceApp[]>([]);
@@ -168,6 +174,8 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
   const videoSize = useRef<VideoFrameSize | null>(null);
+  const orientationRef = useRef(orientation);
+  const pictureInPictureRef = useRef(false);
   const [videoFrameSize, setVideoFrameSize] = useState<VideoFrameSize | null>(null);
   const appState = useRef(AppState.currentState);
   const lastVideoInfoAt = useRef(0);
@@ -198,6 +206,23 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
     }, 6_000);
   };
 
+  const stopPictureInPicture = useCallback(() => {
+    const view = nativeVideoRef.current;
+    if (!view || !pictureInPictureRef.current) return;
+    DeviceHubMedia?.stopPictureInPicture?.(view);
+  }, []);
+
+  const togglePictureInPicture = useCallback(() => {
+    const view = nativeVideoRef.current;
+    if (Platform.OS !== "ios" || !view || !DeviceHubMedia) return;
+    if (pictureInPictureRef.current) {
+      DeviceHubMedia.stopPictureInPicture?.(view);
+      return;
+    }
+    const started = DeviceHubMedia.startPictureInPicture?.(view) ?? false;
+    if (!started) showActivity(t("pictureInPictureUnavailable"));
+  }, [t]);
+
   const releaseAllTouches = useCallback(() => {
     socket.send({
       type: "multi_touch",
@@ -211,6 +236,18 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
     touchIdentities.current.clear();
     setTouchFeedbackContacts([]);
   }, [socket]);
+
+  useEffect(() => {
+    if (orientation === orientationRef.current) return;
+    orientationRef.current = orientation;
+    releaseAllTouches();
+    setCurrentOrientation(orientation);
+  }, [orientation, releaseAllTouches]);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    setPictureInPictureSupported(DeviceHubMedia?.isPictureInPictureSupported?.() ?? false);
+  }, []);
 
   useEffect(() => {
     setStatusBarHidden(fullscreen, "fade");
@@ -229,14 +266,15 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
       socket.send({ type: "video_demand", active: true });
       socket.send({ type: "audio_demand", active: true });
     };
-    const pauseMedia = () => {
+    const keepMediaInBackground = () => {
       releaseAllTouches();
-      socket.send({ type: "video_demand", active: false });
-      socket.send({ type: "audio_demand", active: false });
-      resetNativeMedia();
+      // The iOS audio background mode keeps the socket and native sinks alive.
+      // AVPictureInPictureController can then continue using the same display layer.
+      socket.send({ type: "video_demand", active: true });
+      socket.send({ type: "audio_demand", active: true });
     };
     const scheduleReconnect = () => {
-      if (disposed || appState.current !== "active" || reconnectTimer.current) return;
+      if (disposed || reconnectTimer.current) return;
       const delay = Math.min(8_000, 500 * 2 ** reconnectAttempt.current);
       reconnectAttempt.current = Math.min(reconnectAttempt.current + 1, 4);
       reconnectTimer.current = setTimeout(() => {
@@ -277,6 +315,13 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
     const onLease = (granted: boolean) => {
       if (!granted) releaseAllTouches();
       setControlGranted(granted);
+    };
+    const onStatus = (nextStatus: DeviceStatus) => {
+      if (nextStatus.orientation === orientationRef.current) return;
+      orientationRef.current = nextStatus.orientation;
+      // A live gesture cannot safely continue across a rotated coordinate space.
+      releaseAllTouches();
+      setCurrentOrientation(nextStatus.orientation);
     };
     const onClipboard = (event: ClipboardEvent) => {
       const direction = event.from_device ? "Device" : "Host";
@@ -338,6 +383,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
       onClose,
       onError,
       onControlLease: onLease,
+      onStatus,
       onMedia,
       onServerHello,
       onClipboard,
@@ -360,7 +406,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
         resetNativeMedia();
         socket.reconnect(true);
       } else if (nextState !== "active" && previousState === "active") {
-        pauseMedia();
+        keepMediaInBackground();
       }
     });
     return () => {
@@ -372,6 +418,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
       activityTimer.current = null;
       setActivityMessage(null);
       unsubscribe();
+      stopPictureInPicture();
       releaseAllTouches();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
@@ -383,7 +430,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
       }
       socket.close();
     };
-  }, [loadApps, releaseAllTouches, socket]);
+  }, [loadApps, releaseAllTouches, socket, stopPictureInPicture]);
 
   const onSurfaceLayout = (event: LayoutChangeEvent) => {
     setSurface({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
@@ -391,14 +438,14 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
 
   const sendTouches = (event: GestureResponderEvent) => {
     if (!controlGranted) return;
-    const contacts = contactsFromEvent(event, surface, videoSize.current, touchIdentities.current);
+    const contacts = contactsFromEvent(event, surface, videoSize.current, currentOrientation, touchIdentities.current);
     setTouchFeedbackContacts(contacts);
     socket.send({ type: "multi_touch", contacts });
   };
 
   const endTouches = (event: GestureResponderEvent) => {
-    const ended = changedContact(event, surface, videoSize.current, touchIdentities.current);
-    const remaining = contactsFromEvent(event, surface, videoSize.current, touchIdentities.current);
+    const ended = changedContact(event, surface, videoSize.current, currentOrientation, touchIdentities.current);
+    const remaining = contactsFromEvent(event, surface, videoSize.current, currentOrientation, touchIdentities.current);
     for (const touch of event.nativeEvent.changedTouches) {
       touchIdentities.current.release(touch.identifier);
     }
@@ -764,6 +811,16 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
             {NativeVideoView ? (
               <NativeVideoView
                 contentMode="fit"
+                onPictureInPictureStatus={(event: { nativeEvent: { state?: string; detail?: string } }) => {
+                  const state = event.nativeEvent?.state;
+                  const active = state === "starting" || state === "started" || state === "stopping";
+                  pictureInPictureRef.current = active;
+                  setPictureInPictureActive(state === "starting" || state === "started");
+                  if (state === "failed") {
+                    showActivity(event.nativeEvent.detail ?? t("pictureInPictureUnavailable"));
+                  }
+                }}
+                orientation={currentOrientation}
                 pointerEvents="none"
                 ref={nativeVideoRef}
                 style={styles.nativeVideo}
@@ -776,7 +833,7 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
             )}
             <TouchFeedbackOverlay
               contacts={touchFeedbackContacts}
-              orientation={orientation}
+              orientation={currentOrientation}
               surface={surface}
               video={videoFrameSize}
               visible={touchFeedbackDebug}
@@ -867,6 +924,16 @@ export function ControlScreen({ client, socket, device, onBack, orientation }: P
               <Pressable accessibilityRole="button" onPress={() => { setControlsOpen(false); setFullscreen((current) => !current); }} style={styles.controlActionButton}>
                 <Text style={styles.controlActionText}>{fullscreen ? t("exitFullScreen") : t("fullScreen")}</Text>
               </Pressable>
+              {Platform.OS === "ios" && pictureInPictureSupported ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={!connected || !videoFrameSize}
+                  onPress={togglePictureInPicture}
+                  style={[styles.controlActionButton, (!connected || !videoFrameSize) && styles.disabled]}
+                >
+                  <Text style={styles.controlActionText}>{pictureInPictureActive ? t("exitPictureInPicture") : t("pictureInPicture")}</Text>
+                </Pressable>
+              ) : null}
               <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
                 <Text style={styles.controlActionText}>{t("pasteText")}</Text>
               </Pressable>

@@ -24,7 +24,8 @@ This first client layer provides:
 - an installed-app panel that lists user apps and can launch or stop them through the host;
 - parsing of the existing `DHV2` HEVC and `DHA1` PCM packets, exposing packet telemetry to the control screen;
 - live WebSocket event handling for clipboard metadata, device changes, and stream metrics. App install/uninstall events refresh the app list while metrics are throttled before reaching React state.
-- foreground-aware control recovery: backgrounding releases media demand and native queues, while returning to the control screen rebuilds the socket before resuming playback.
+- foreground-aware control recovery: returning to the control screen rebuilds the socket before resuming playback, while iOS keeps the native media sinks and audio session eligible for background playback.
+- an iOS full-screen and Picture in Picture viewer, a collapsible Controls panel for hardware/device/operation tools, and optional touch feedback debugging with identities, trails, and orientation-aware display/native coordinates.
 
 Both client platforms use native media sinks. iOS uses `AVSampleBufferDisplayLayer` and `AVAudioEngine`; Android uses `MediaCodec` and `AudioTrack`. The media queues are bounded and drop stale packets under pressure, so the React Native thread remains available for touch input and connection state.
 
@@ -71,11 +72,17 @@ The generated native projects and Pods are local build products and are intentio
 
 Pull requests run the same TypeScript and Expo bundle checks plus Android Debug and iOS Simulator development builds in GitHub Actions. A green JavaScript bundle check does not replace either native build: native media code is compiled separately for each platform.
 
-## Nightly iOS IPA
+## Nightly iOS IPA and AltStore Source
 
 The `Publish iOS Nightly IPA` workflow builds a Release iOS archive without Apple signing and publishes it to the `nightly` prerelease. It runs for pushes to `main`, once per day, or manually from the Actions tab. The workflow also keeps a 14-day Actions artifact for troubleshooting.
 
-Download `devicehub-mobile-unsigned.ipa` from the nightly release and verify it with the accompanying `.sha256` file. The IPA contains an unsigned `.app`; it cannot be installed directly on an iPhone or iPad. Installation requires your own Apple development or distribution certificate, a matching provisioning profile, and a re-signing step. It is not an App Store or TestFlight package.
+Download `devicehub-mobile-unsigned.ipa` from the nightly release and verify it with the accompanying `.sha256` file. The IPA contains an unsigned `.app`; AltStore and SideStore can install it through their normal re-signing flow using your own Apple account. It is not an App Store or TestFlight package.
+
+The same AltStore-compatible feed works in both AltStore and SideStore:
+
+`https://github.com/boa-z/devicehub-mobile/releases/download/nightly/apps_nightly.json`
+
+Add this URL from the store's Sources screen. The nightly release asset is the source of truth; `.github/apps_nightly.json` is the repository template used by the workflow. The feed points to the unsigned IPA in the same nightly release.
 
 The connection screen discovers `_devicehub._tcp.local.` services when the headless server was started with `--allow-lan`. Select a discovered service to fill its address, then enter the access token printed by `devicehub-headless`. Discovery never carries the token. Manual addresses remain supported; for a phone on the LAN, use the host's LAN address rather than `127.0.0.1`.
 
@@ -116,12 +123,15 @@ path. Container access is therefore subject to the same device trust,
 developer-service, and app availability checks as the server API. The mobile
 client does not attempt to install, sign, or modify an app bundle.
 
-The device control **Controls** page is intentionally limited to the actions
-also represented by the desktop device-view fullscreen toolbars: Home, lock,
-volume up/down, mute, Siri, and Action hardware buttons; reconnect; rotate
-left/right; screenshot; and paste text. App management, AFC, performance,
-location, device metadata, restart, and shutdown remain separate actions on the
-control screen rather than being mixed into this aggregation page.
+The device control screen supports a full-screen viewer and a collapsible
+**Controls** panel. The panel contains Home, lock, volume up/down, mute, Siri,
+and Action hardware buttons; reconnect; rotate left/right; paste text; restart;
+shutdown; location; Apps; Files; Performance; device information; and
+screenshot actions. The panel also contains the optional touch feedback debug
+switch, which visualizes direct touch identities, event trails, and display/native
+coordinates over the video surface. On iOS, the panel also exposes Picture in
+Picture once a native video frame is ready. The iOS audio session and app
+background mode keep audio playback alive when the client is backgrounded.
 
 The Performance action reads the existing device-scoped performance and log
 routes. Sampling and log streaming are opt-in, and a panel only stops a demand
