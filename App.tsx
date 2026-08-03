@@ -199,7 +199,7 @@ function AppContent() {
   if (screen === "control" && client && socket && selectedDevice) {
     return (
       <>
-        <ControlScreen client={client} socket={socket} device={selectedDevice} onBack={leaveControl} />
+        <ControlScreen client={client} socket={socket} device={selectedDevice} onBack={leaveControl} orientation={status?.orientation ?? "portrait"} />
         <StatusBar style="light" />
       </>
     );

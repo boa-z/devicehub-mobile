@@ -687,7 +687,12 @@ export class DeviceHubSocket {
       if (this.socket !== source || this.closed) return;
       if (!buffer) return;
       const packet = parseMediaPacket(buffer);
-      if (packet) this.dispatch((listener) => listener.onMedia?.(packet));
+      if (packet) {
+        this.dispatch((listener) => listener.onMedia?.(packet));
+        if (packet.kind === "video") {
+          this.send({ type: "browser_frame_accepted", sequence: packet.sequence.toString() });
+        }
+      }
     } catch (error) {
       if (protocolError) {
         this.clearHandshakeTimer();
@@ -727,6 +732,9 @@ function parseServerHello(payload: unknown): ServerHello {
   }
   if (value.audio?.codec !== "pcm_s16le" || value.audio?.packet !== "DHA1") {
     throw new Error("DeviceHub server does not advertise the PCM audio stream");
+  }
+  if (!Array.isArray(value.input) || !value.input.includes("multi_touch")) {
+    throw new Error("DeviceHub server does not advertise multi-touch input");
   }
   return value as ServerHello;
 }

@@ -11,6 +11,7 @@ final class DeviceHubVideoView: ExpoView {
   private let pendingLock = NSLock()
   private let maxPendingFrames = 3
   private var pendingFrames = 0
+  private var pendingKeyframes = 0
   private var formatDescription: CMVideoFormatDescription?
   private var vps: Data?
   private var sps: Data?
@@ -28,16 +29,18 @@ final class DeviceHubVideoView: ExpoView {
     displayLayer.frame = bounds
   }
 
-  func enqueue(annexB: Data, timestampNs: Double, keyframe: Bool, width: Int, height: Int) {
+  @discardableResult
+  func enqueue(annexB: Data, timestampNs: Double, keyframe: Bool, width: Int, height: Int) -> Bool {
     // A slow native renderer must not turn a short network burst into an
-    // unbounded queue. Preserve keyframes so the next decoder refresh can
+    // unbounded queue. Preserve one keyframe so the next decoder refresh can
     // recover, while dropping stale inter frames under pressure.
     pendingLock.lock()
-    guard pendingFrames < maxPendingFrames || keyframe else {
+    guard pendingFrames < maxPendingFrames || (keyframe && pendingKeyframes == 0) else {
       pendingLock.unlock()
-      return
+      return false
     }
     pendingFrames += 1
+    if keyframe { pendingKeyframes += 1 }
     pendingLock.unlock()
 
     decodeQueue.async { [weak self] in
@@ -51,11 +54,12 @@ final class DeviceHubVideoView: ExpoView {
       )
       DispatchQueue.main.async { [weak self] in
         guard let self else { return }
-        defer { self.completePendingFrame() }
+        defer { self.completePendingFrame(keyframe: keyframe) }
         guard generation == self.streamGeneration, let sample else { return }
         self.present(sample, keyframe: keyframe)
       }
     }
+    return true
   }
 
   func reset() {
@@ -72,9 +76,10 @@ final class DeviceHubVideoView: ExpoView {
     }
   }
 
-  private func completePendingFrame() {
+  private func completePendingFrame(keyframe: Bool) {
     pendingLock.lock()
     pendingFrames = max(0, pendingFrames - 1)
+    if keyframe { pendingKeyframes = max(0, pendingKeyframes - 1) }
     pendingLock.unlock()
   }
 

@@ -14,7 +14,7 @@ export type DeviceHubMediaModule = {
     keyframe: boolean,
     width: number,
     height: number,
-  ): void;
+  ): boolean;
   pushAudioPcm(data: Uint8Array, sampleRate: number, channels: number): void;
   reset(): void;
   resetVideo(view: unknown): void;

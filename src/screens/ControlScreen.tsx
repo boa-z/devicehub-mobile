@@ -11,6 +11,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -18,6 +19,7 @@ import {
   type LayoutChangeEvent,
 } from "react-native";
 import { DeviceHubClient, DeviceHubSocket } from "../protocol/client";
+import { normalizeTouchPoint, type VideoFrameSize } from "../input/touchCoordinates";
 import { TouchIdentityAllocator } from "../input/touchIdentities";
 import { isAudioPacket, isVideoPacket } from "../protocol/packets";
 import type {
@@ -32,11 +34,14 @@ import type {
   HomeScreenLayout,
   LocationStatus,
   MultiTouchContact,
+  Orientation,
   StreamMetrics,
 } from "../protocol/types";
 import { DeviceHubMedia, DeviceHubVideoView } from "devicehub-media";
+import { setStatusBarHidden } from "expo-status-bar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useI18n } from "../i18n";
+import { TouchFeedbackOverlay } from "../components/TouchFeedbackOverlay";
 import { DeviceFilesScreen } from "./DeviceFilesScreen";
 import { PerformanceScreen } from "./PerformanceScreen";
 
@@ -47,13 +52,10 @@ type Props = {
   socket: DeviceHubSocket;
   device: Device;
   onBack: () => void;
+  orientation: Orientation;
 };
 
 const HARDWARE_BUTTONS = ["home", "lock", "volume-up", "volume-down", "mute", "siri", "action"] as const;
-
-function clamp(value: number) {
-  return Math.max(0, Math.min(1, value));
-}
 
 function formatBytes(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
@@ -67,41 +69,43 @@ function formatOptional(value: unknown) {
 
 function contactsFromEvent(
   event: GestureResponderEvent,
-  width: number,
-  height: number,
+  surface: { width: number; height: number },
+  video: VideoFrameSize | null,
   identities: TouchIdentityAllocator,
 ): MultiTouchContact[] {
   return event.nativeEvent.touches.flatMap((touch) => {
     const identity = identities.identityFor(touch.identifier);
     if (identity === null) return [];
+    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video);
     return [{
       identity,
       touching: true,
-      x: clamp(touch.locationX / Math.max(width, 1)),
-      y: clamp(touch.locationY / Math.max(height, 1)),
+      x: point.x,
+      y: point.y,
     }];
   });
 }
 
 function changedContact(
   event: GestureResponderEvent,
-  width: number,
-  height: number,
+  surface: { width: number; height: number },
+  video: VideoFrameSize | null,
   identities: TouchIdentityAllocator,
 ): MultiTouchContact[] {
   return event.nativeEvent.changedTouches.flatMap((touch) => {
     const identity = identities.identityFor(touch.identifier);
     if (identity === null) return [];
+    const point = normalizeTouchPoint(touch.locationX, touch.locationY, surface, video);
     return [{
       identity,
       touching: false,
-      x: clamp(touch.locationX / Math.max(width, 1)),
-      y: clamp(touch.locationY / Math.max(height, 1)),
+      x: point.x,
+      y: point.y,
     }];
   });
 }
 
-export function ControlScreen({ client, socket, device, onBack }: Props) {
+export function ControlScreen({ client, socket, device, onBack, orientation }: Props) {
   const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [connected, setConnected] = useState(socket.serverHello !== null);
@@ -117,6 +121,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   const [filesApp, setFilesApp] = useState<DeviceApp | null>(null);
   const [performanceOpen, setPerformanceOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [touchFeedbackDebug, setTouchFeedbackDebug] = useState(false);
+  const [touchFeedbackContacts, setTouchFeedbackContacts] = useState<MultiTouchContact[]>([]);
   const [apps, setApps] = useState<DeviceApp[]>([]);
   const [appsBusy, setAppsBusy] = useState(false);
   const [appAction, setAppAction] = useState<string | null>(null);
@@ -160,6 +167,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   );
   const nativeVideoRef = useRef<unknown>(null);
   const touchIdentities = useRef(new TouchIdentityAllocator());
+  const videoSize = useRef<VideoFrameSize | null>(null);
+  const [videoFrameSize, setVideoFrameSize] = useState<VideoFrameSize | null>(null);
   const appState = useRef(AppState.currentState);
   const lastVideoInfoAt = useRef(0);
   const lastAudioInfoAt = useRef(0);
@@ -189,9 +198,30 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     }, 6_000);
   };
 
+  const releaseAllTouches = useCallback(() => {
+    socket.send({
+      type: "multi_touch",
+      contacts: Array.from({ length: 5 }, (_, identity) => ({
+        identity,
+        touching: false,
+        x: 0,
+        y: 0,
+      })),
+    });
+    touchIdentities.current.clear();
+    setTouchFeedbackContacts([]);
+  }, [socket]);
+
+  useEffect(() => {
+    setStatusBarHidden(fullscreen, "fade");
+    return () => setStatusBarHidden(false, "fade");
+  }, [fullscreen]);
+
   useEffect(() => {
     let disposed = false;
     const resetNativeMedia = () => {
+      videoSize.current = null;
+      setVideoFrameSize(null);
       if (nativeVideoRef.current) DeviceHubMedia?.resetVideo(nativeVideoRef.current);
       DeviceHubMedia?.reset();
     };
@@ -200,6 +230,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       socket.send({ type: "audio_demand", active: true });
     };
     const pauseMedia = () => {
+      releaseAllTouches();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
       resetNativeMedia();
@@ -243,7 +274,10 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       if (disposed) return;
       setConnectionError(error instanceof Error ? error.message : String(error));
     };
-    const onLease = (granted: boolean) => setControlGranted(granted);
+    const onLease = (granted: boolean) => {
+      if (!granted) releaseAllTouches();
+      setControlGranted(granted);
+    };
     const onClipboard = (event: ClipboardEvent) => {
       const direction = event.from_device ? "Device" : "Host";
       const preview = event.preview ? ` · ${event.preview}` : "";
@@ -269,9 +303,16 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           lastVideoInfoAt.current = now;
           setVideoInfo(`${packet.width} x ${packet.height} · ${packet.keyframe ? "keyframe" : "frame"}`);
         }
+        const nextVideoSize = { width: packet.width, height: packet.height };
+        videoSize.current = nextVideoSize;
+        setVideoFrameSize((current) => current
+          && current.width === nextVideoSize.width
+          && current.height === nextVideoSize.height
+          ? current
+          : nextVideoSize);
         const view = nativeVideoRef.current;
         if (DeviceHubMedia && view) {
-          DeviceHubMedia.pushVideoFrame(
+          const accepted = DeviceHubMedia.pushVideoFrame(
             view,
             packet.data,
             Number(packet.timestamp) * 1_000,
@@ -279,6 +320,9 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
             packet.width,
             packet.height,
           );
+          if (accepted) {
+            socket.send({ type: "browser_frame_accepted", sequence: packet.sequence.toString() });
+          }
         }
       } else if (isAudioPacket(packet)) {
         const now = Date.now();
@@ -312,6 +356,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         setConnected(false);
         setControlGranted(false);
         setConnectionError(null);
+        releaseAllTouches();
         resetNativeMedia();
         socket.reconnect(true);
       } else if (nextState !== "active" && previousState === "active") {
@@ -327,6 +372,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       activityTimer.current = null;
       setActivityMessage(null);
       unsubscribe();
+      releaseAllTouches();
       socket.send({ type: "video_demand", active: false });
       socket.send({ type: "audio_demand", active: false });
       resetNativeMedia();
@@ -337,24 +383,31 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
       }
       socket.close();
     };
-  }, [loadApps, socket]);
+  }, [loadApps, releaseAllTouches, socket]);
 
   const onSurfaceLayout = (event: LayoutChangeEvent) => {
     setSurface({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height });
   };
 
   const sendTouches = (event: GestureResponderEvent) => {
-    const contacts = contactsFromEvent(event, surface.width, surface.height, touchIdentities.current);
+    if (!controlGranted) return;
+    const contacts = contactsFromEvent(event, surface, videoSize.current, touchIdentities.current);
+    setTouchFeedbackContacts(contacts);
     socket.send({ type: "multi_touch", contacts });
   };
 
   const endTouches = (event: GestureResponderEvent) => {
-    const ended = changedContact(event, surface.width, surface.height, touchIdentities.current);
-    const remaining = contactsFromEvent(event, surface.width, surface.height, touchIdentities.current);
+    const ended = changedContact(event, surface, videoSize.current, touchIdentities.current);
+    const remaining = contactsFromEvent(event, surface, videoSize.current, touchIdentities.current);
     for (const touch of event.nativeEvent.changedTouches) {
       touchIdentities.current.release(touch.identifier);
     }
-    socket.send({ type: "multi_touch", contacts: [...remaining, ...ended] });
+    if (controlGranted) {
+      setTouchFeedbackContacts(remaining);
+      socket.send({ type: "multi_touch", contacts: [...remaining, ...ended] });
+    } else {
+      setTouchFeedbackContacts([]);
+    }
   };
 
   const openApps = () => {
@@ -365,8 +418,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   const openDeviceFiles = () => {
+    setControlsOpen(false);
     setFilesApp(null);
     setFilesOpen(true);
+  };
+
+  const openPerformance = () => {
+    setControlsOpen(false);
+    setPerformanceOpen(true);
   };
 
   const openAppFiles = (app: DeviceApp) => {
@@ -606,6 +665,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
     setConnectionError(null);
     setConnected(false);
     setControlGranted(false);
+    releaseAllTouches();
     socket.reconnect(true);
   };
 
@@ -630,8 +690,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
   };
 
   return (
-    <View style={[styles.root, { paddingBottom: insets.bottom }]}>
-      <View style={[styles.header, { paddingTop: 12 + insets.top }]}>
+    <View style={[styles.root, fullscreen && styles.fullscreenRoot, { paddingBottom: fullscreen ? 0 : insets.bottom }]}>
+      {!fullscreen ? <View style={[styles.header, { paddingTop: 12 + insets.top }]}>
         <Pressable accessibilityRole="button" onPress={onBack} style={styles.backButton}>
           <Text style={styles.backText}>‹ {t("devicesBack")}</Text>
         </Pressable>
@@ -644,6 +704,14 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
         <View style={styles.headerActions}>
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={t("fullScreen")}
+            onPress={() => setFullscreen(true)}
+            style={({ pressed }) => [styles.fullscreenButton, pressed && styles.buttonPressed]}
+          >
+            <Text style={styles.controlsButtonText}>{t("fullScreen")}</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel={t("controls")}
             onPress={() => setControlsOpen(true)}
             style={({ pressed }) => [styles.controlsButton, pressed && styles.buttonPressed]}
@@ -652,8 +720,8 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           </Pressable>
           <View style={styles.headerBadge}><Text style={styles.headerBadgeText}>{device.connection}</Text></View>
         </View>
-      </View>
-      {!connected || connectionError ? (
+      </View> : null}
+      {!fullscreen && (!connected || connectionError) ? (
         <View style={styles.connectionBanner}>
           <View style={styles.connectionCopy}>
             <Text style={styles.connectionTitle}>{connected ? t("connectionWarning") : t("connectingToDevice")}</Text>
@@ -673,24 +741,30 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
           ) : null}
         </View>
       ) : null}
-      {activityMessage ? (
+      {!fullscreen && activityMessage ? (
         <View style={styles.activityBanner}>
           <Text numberOfLines={2} style={styles.activityText}>{activityMessage}</Text>
         </View>
       ) : null}
-      <View style={styles.content}>
-        <View style={styles.videoFrame} onLayout={onSurfaceLayout}>
+      <View style={[styles.content, fullscreen && styles.contentFullscreen]}>
+        <View style={[styles.videoFrame, fullscreen && styles.videoFrameFullscreen]}>
           <View
             accessibilityLabel={t("iPhoneTouchSurface")}
+            onLayout={onSurfaceLayout}
+            onMoveShouldSetResponder={() => true}
+            onResponderTerminate={releaseAllTouches}
+            onResponderTerminationRequest={() => false}
+            onStartShouldSetResponder={() => true}
             onTouchStart={sendTouches}
             onTouchMove={sendTouches}
             onTouchEnd={endTouches}
-            onTouchCancel={endTouches}
-            style={styles.touchSurface}
+            onTouchCancel={releaseAllTouches}
+            style={[styles.touchSurface, fullscreen && styles.touchSurfaceFullscreen]}
           >
             {NativeVideoView ? (
               <NativeVideoView
                 contentMode="fit"
+                pointerEvents="none"
                 ref={nativeVideoRef}
                 style={styles.nativeVideo}
               />
@@ -700,65 +774,44 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
                 <Text style={styles.videoDescription}>{t("nativeVideoHint")}</Text>
               </>
             )}
+            <TouchFeedbackOverlay
+              contacts={touchFeedbackContacts}
+              orientation={orientation}
+              surface={surface}
+              video={videoFrameSize}
+              visible={touchFeedbackDebug}
+            />
             <Text style={styles.videoTelemetry}>{videoInfo}</Text>
             <Text style={styles.videoTelemetry}>{audioInfo}</Text>
           </View>
+          {fullscreen ? (
+            <View style={[styles.fullscreenChrome, { paddingTop: insets.top + 8 }]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("controls")}
+                onPress={() => setControlsOpen(true)}
+                style={({ pressed }) => [styles.fullscreenChromeButton, pressed && styles.buttonPressed]}
+              >
+                <Text style={styles.fullscreenChromeText}>{t("controls")}</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("exitFullScreen")}
+                onPress={() => setFullscreen(false)}
+                style={({ pressed }) => [styles.fullscreenChromeButton, pressed && styles.buttonPressed]}
+              >
+                <Text style={styles.fullscreenChromeText}>{t("exitFullScreen")}</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </View>
-        <View style={styles.streamPanel}>
+        {!fullscreen ? <View style={styles.streamPanel}>
           <Text numberOfLines={1} style={styles.streamText}>
             {streamMetrics
               ? `Stream ${streamMetrics.source_fps.toFixed(1)} -> ${streamMetrics.decoded_fps.toFixed(1)} -> ${streamMetrics.sent_fps.toFixed(1)} fps · ${streamMetrics.megabits_per_second.toFixed(1)} Mbps`
               : t("streamMetricsPending")}
           </Text>
-        </View>
-        <View style={styles.toolbar}>
-          {HARDWARE_BUTTONS.map((name) => (
-            <Pressable
-              accessibilityRole="button"
-              disabled={!controlGranted}
-              key={name}
-              onPress={() => socket.send({ type: "button", name })}
-              style={({ pressed }) => [styles.hardwareButton, pressed && styles.buttonPressed, !controlGranted && styles.disabled]}
-            >
-              <Text style={styles.hardwareText}>{name === "home" ? t("homeButton") : name === "lock" ? t("lockButton") : name === "volume-up" ? t("volumeUp") : name === "volume-down" ? t("volumeDown") : name === "mute" ? t("muteButton") : name === "siri" ? t("siriButton") : t("actionButton")}</Text>
-            </Pressable>
-          ))}
-        </View>
-        <View style={styles.secondaryToolbar}>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("apps")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={openDeviceFiles} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("files")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={() => setPerformanceOpen(true)} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("performance")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "left" })} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("rotateLeft")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "right" })} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("rotateRight")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("pasteText")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("restart")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("restart")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("shutdown")} style={styles.secondaryButton}>
-            <Text style={styles.secondaryDangerText}>{t("shutDown")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openLocation} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("location")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={openDetails} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("deviceInfo")}</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" disabled={!connected} onPress={openScreenshot} style={styles.secondaryButton}>
-            <Text style={styles.secondaryText}>{t("screenshot")}</Text>
-          </Pressable>
-        </View>
+        </View> : null}
       </View>
       <Modal animationType="slide" onRequestClose={() => setControlsOpen(false)} visible={controlsOpen}>
         <View style={[styles.controlsModal, { paddingBottom: insets.bottom, paddingTop: 18 + insets.top }]}>
@@ -811,12 +864,53 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
               <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => socket.send({ type: "rotate", direction: "right" })} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
                 <Text style={styles.controlActionText}>{t("rotateRight")}</Text>
               </Pressable>
-              <Pressable accessibilityRole="button" disabled={!connected} onPress={openScreenshot} style={[styles.controlActionButton, !connected && styles.disabled]}>
-                <Text style={styles.controlActionText}>{t("screenshot")}</Text>
+              <Pressable accessibilityRole="button" onPress={() => { setControlsOpen(false); setFullscreen((current) => !current); }} style={styles.controlActionButton}>
+                <Text style={styles.controlActionText}>{fullscreen ? t("exitFullScreen") : t("fullScreen")}</Text>
               </Pressable>
               <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openPaste} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
                 <Text style={styles.controlActionText}>{t("pasteText")}</Text>
               </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("restart")} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("restart")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={() => confirmPowerAction("shutdown")} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlDangerText}>{t("shutDown")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!controlGranted} onPress={openLocation} style={[styles.controlActionButton, !controlGranted && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("location")}</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.controlSectionTitle}>{t("operationTools")}</Text>
+            <View style={styles.controlActionList}>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openApps} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("apps")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openDeviceFiles} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("files")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openPerformance} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("performance")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openDetails} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("deviceInfo")}</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" disabled={!connected} onPress={openScreenshot} style={[styles.controlActionButton, !connected && styles.disabled]}>
+                <Text style={styles.controlActionText}>{t("screenshot")}</Text>
+              </Pressable>
+            </View>
+            <Text style={styles.controlSectionTitle}>{t("touchFeedbackDebug")}</Text>
+            <View style={styles.controlToggleRow}>
+              <View style={styles.controlToggleCopy}>
+                <Text style={styles.controlToggleTitle}>{t("touchFeedbackDebug")}</Text>
+                <Text style={styles.controlToggleHint}>{t("touchFeedbackDebugHint")}</Text>
+              </View>
+              <Switch
+                accessibilityLabel={t("touchFeedbackDebug")}
+                onValueChange={setTouchFeedbackDebug}
+                thumbColor={touchFeedbackDebug ? "#ffffff" : "#d9e0e8"}
+                trackColor={{ false: "#c3ccd6", true: "#5b9be5" }}
+                value={touchFeedbackDebug}
+              />
             </View>
           </ScrollView>
         </View>
@@ -1189,6 +1283,7 @@ export function ControlScreen({ client, socket, device, onBack }: Props) {
 
 const styles = StyleSheet.create({
   root: { backgroundColor: "#111821", flex: 1 },
+  fullscreenRoot: { backgroundColor: "#080d12" },
   header: { alignItems: "center", backgroundColor: "#1a2430", flexDirection: "row", paddingHorizontal: 14, paddingVertical: 12 },
   backButton: { paddingVertical: 8, width: 88 },
   backText: { color: "#8fc1ff", fontSize: 15, fontWeight: "700" },
@@ -1201,6 +1296,7 @@ const styles = StyleSheet.create({
   headerBadge: { backgroundColor: "#2a3747", borderRadius: 7, marginLeft: 8, paddingHorizontal: 8, paddingVertical: 5 },
   headerBadgeText: { color: "#bfccda", fontSize: 11, fontWeight: "700" },
   controlsButton: { backgroundColor: "#263548", borderColor: "#3b5068", borderRadius: 7, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 6 },
+  fullscreenButton: { backgroundColor: "#1f405b", borderColor: "#3f769d", borderRadius: 7, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 6 },
   controlsButtonText: { color: "#d7e5f4", fontSize: 11, fontWeight: "700" },
   connectionBanner: { alignItems: "center", backgroundColor: "#2a2020", borderBottomColor: "#523737", borderBottomWidth: 1, flexDirection: "row", gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
   connectionCopy: { flex: 1, minWidth: 0 },
@@ -1211,14 +1307,20 @@ const styles = StyleSheet.create({
   activityBanner: { backgroundColor: "#1b2c3e", borderBottomColor: "#314b64", borderBottomWidth: 1, paddingHorizontal: 16, paddingVertical: 8 },
   activityText: { color: "#c5d9ed", fontSize: 12, lineHeight: 17 },
   content: { flex: 1, padding: 16 },
+  contentFullscreen: { padding: 0 },
   videoFrame: { alignSelf: "center", backgroundColor: "#080d12", borderColor: "#2b3a4b", borderRadius: 16, borderWidth: 1, flex: 1, maxHeight: 720, maxWidth: 520, overflow: "hidden", width: "100%" },
-  touchSurface: { alignItems: "center", flex: 1, justifyContent: "center", padding: 24 },
+  videoFrameFullscreen: { borderRadius: 0, borderWidth: 0, maxHeight: "100%", maxWidth: "100%" },
+  touchSurface: { alignItems: "center", flex: 1, justifyContent: "center" },
+  touchSurfaceFullscreen: { alignSelf: "stretch" },
   nativeVideo: StyleSheet.absoluteFill,
   videoTitle: { color: "#f1f5fa", fontSize: 20, fontWeight: "700" },
   videoDescription: { color: "#8796a8", fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 280, textAlign: "center" },
   videoTelemetry: { color: "#6f8195", fontSize: 11, marginTop: 12 },
   streamPanel: { alignItems: "center", minHeight: 26, justifyContent: "center", paddingTop: 6 },
   streamText: { color: "#70849a", fontSize: 11 },
+  fullscreenChrome: { flexDirection: "row", gap: 8, justifyContent: "flex-end", left: 0, paddingHorizontal: 12, position: "absolute", right: 0, top: 0, zIndex: 10 },
+  fullscreenChromeButton: { backgroundColor: "rgba(20, 30, 42, 0.9)", borderColor: "#526b86", borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8 },
+  fullscreenChromeText: { color: "#edf3f9", fontSize: 12, fontWeight: "700" },
   toolbar: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center", paddingTop: 14 },
   hardwareButton: { alignItems: "center", backgroundColor: "#263548", borderColor: "#3b5068", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 42, minWidth: 68, paddingHorizontal: 10 },
   hardwareText: { color: "#e1e9f2", fontSize: 12, fontWeight: "700" },
@@ -1237,6 +1339,11 @@ const styles = StyleSheet.create({
   controlActionList: { gap: 8 },
   controlActionButton: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#b8cdea", borderRadius: 10, borderWidth: 1, justifyContent: "center", minHeight: 46, paddingHorizontal: 14 },
   controlActionText: { color: "#2368c4", fontSize: 14, fontWeight: "700" },
+  controlDangerText: { color: "#bd2d3b", fontSize: 14, fontWeight: "700" },
+  controlToggleRow: { alignItems: "center", backgroundColor: "#ffffff", borderColor: "#dce2e9", borderRadius: 10, borderWidth: 1, flexDirection: "row", gap: 12, justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 12 },
+  controlToggleCopy: { flex: 1, minWidth: 0 },
+  controlToggleTitle: { color: "#152033", fontSize: 14, fontWeight: "700" },
+  controlToggleHint: { color: "#778395", fontSize: 12, lineHeight: 17, marginTop: 4 },
   appsModal: { backgroundColor: "#f4f6f8", flex: 1, paddingTop: 18 },
   appsHeader: { alignItems: "center", borderBottomColor: "#dce2e9", borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 18, paddingBottom: 14 },
   appsHeaderCopy: { flex: 1, minWidth: 0 },

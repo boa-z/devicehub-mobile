@@ -404,6 +404,7 @@ export type DeviceHubCommand =
   | { type: "rotate"; direction: "left" | "right" }
   | { type: "video_demand"; active: boolean }
   | { type: "audio_demand"; active: boolean }
+  | { type: "browser_frame_accepted"; sequence: string }
   | { type: "browser_video_keyframe" }
   | { type: "frame_presented"; sequence: string };
 
